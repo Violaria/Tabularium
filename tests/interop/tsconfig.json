@@ -12,7 +12,8 @@
     "fast-fetch.ts",
     "custom-sorting.ts",
     "plugin-login.ts",
-    "obsidian-runtime.ts"
+    "obsidian-runtime.ts",
+    "migration-rehearsal.ts"
   ],
   "exclude": []
 }

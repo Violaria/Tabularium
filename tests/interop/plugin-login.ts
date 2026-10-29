@@ -5,12 +5,10 @@ import { promisify } from 'node:util';
 import { mkdir, mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { createTemporaryVault, type TemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
-import { createE2eObsidianDeviceLocalState, waitForLiveSyncCoreReady } from '../../apps/obsidian/test/e2e-obsidian/runner/liveSyncWorkflow.ts';
+import type { ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
-import { pinObsidianRuntime } from './obsidian-runtime.ts';
+import { connectTabularium, startTabularium, until } from './obsidian-runtime.ts';
 
 const exec = promisify(execFile);
 const server = process.env.TABULARIUM_URL!;
@@ -25,43 +23,15 @@ const notes: Record<string, string | Uint8Array> = {
   'notes/登录测试.md': '# 登录测试\n\n由插件登录后上传。\n',
   'assets/attachment.bin': Uint8Array.from({ length: 4096 }, (_, i) => (i * 7) % 256),
 };
-const confirmations = ["Overwrite all with remote files", "Keep local files even if not on remote"];
 const step = (name: string) => console.log(`[plugin-login] ${name}`);
-
-async function until<T>(check: () => Promise<T | undefined | false>, timeoutMs = 90_000): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  let last: unknown;
-  while (Date.now() < deadline) {
-    try { const value = await check(); if (value) return value; } catch (error) { last = error; }
-    await sleep(500);
-  }
-  throw new Error(`Timed out${last ? `: ${String(last)}` : ''}`);
-}
 async function api(path: string, method = 'GET', body?: unknown, token?: string) {
   const response = await fetch(`${server}/api/v1${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body),
     headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) } });
   assert(response.ok, `${method} ${path}: ${response.status}`);
   return response.json();
 }
-async function start(vault: TemporaryVault) {
-  await pinObsidianRuntime(vault);
-  const session = await startObsidianLiveSyncSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault, pluginData: {}, localStorageEntries: createE2eObsidianDeviceLocalState(vault.name) });
-  await until(() => evalObsidianJson<boolean>(obsidianCli, "(async()=>JSON.stringify(Boolean(app.plugins.plugins['tabularium']?.tabularium)))()", session.cliEnv));
-  return session;
-}
-// connect() ends by reloading Obsidian, so it is started without waiting and the reload is awaited separately.
-async function connect(session: ObsidianLiveSyncSession, options: Record<string, unknown>) {
-  await evalObsidianJson(obsidianCli, `(async()=>{window.__tabulariumLogin=app.plugins.plugins['tabularium'].tabularium.connect(${JSON.stringify({ server, username, ...options })}).then(()=>'done',e=>'error: '+e.message);return JSON.stringify(true);})()`, session.cliEnv);
-  await until(async () => {
-    // The user confirms the scheduled initialisation once after the reload; the test answers the same dialogue.
-    await evalObsidianJson(obsidianCli, `(async()=>{for(const b of document.querySelectorAll('.modal button'))if(${JSON.stringify(confirmations)}.includes(b.textContent?.trim()))b.click();return JSON.stringify(true);})()`, session.cliEnv);
-    return (await waitForLiveSyncCoreReady(obsidianCli, session.cliEnv, 5000)).appReady;
-  }, 120_000).catch(async (error) => {
-    // Shows what the app is waiting for: open dialogues and their buttons.
-    const dialogues = await evalObsidianJson(obsidianCli, "(async()=>JSON.stringify([...document.querySelectorAll('.modal')].map(m=>({title:m.querySelector('.modal-title')?.textContent,text:m.textContent?.slice(0,600),buttons:[...m.querySelectorAll('button')].map(b=>b.outerHTML.slice(0,300)),inputs:[...m.querySelectorAll('input')].map(i=>i.outerHTML.slice(0,200))}))))()", session.cliEnv).catch(String);
-    throw new Error(`${error.message}\nOpen dialogues: ${JSON.stringify(dialogues)}`);
-  });
-}
+const start = (vault: TemporaryVault) => startTabularium(vault, obsidianCli);
+const connect = (session: ObsidianLiveSyncSession, options: Record<string, unknown>) => connectTabularium(session, obsidianCli, { server, username, ...options });
 async function read(path: string) {
   return new Uint8Array(await readFile(path));
 }
