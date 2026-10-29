@@ -68,7 +68,8 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
     const migrated = current + 1;
     const nextStore = store.replace(`if (version !== ${current})`, `if (version !== ${current} && version !== ${migrated})`).replace('    return db;',
       `    if (db.prepare('PRAGMA user_version').get().user_version === ${current}) db.exec('BEGIN; CREATE TABLE upgrade_probe (id INTEGER PRIMARY KEY) STRICT; PRAGMA user_version=${migrated}; COMMIT;');\n    return db;`);
-    const nextPackage = JSON.stringify({ ...JSON.parse(await readFile(join(root, 'apps/server/package.json'), 'utf8')), version: '0.3.0-test' });
+    const serverPackage = JSON.parse(await readFile(join(root, 'apps/server/package.json'), 'utf8'));
+    const nextPackage = JSON.stringify({ ...serverPackage, version: `${serverPackage.version}-next` });
     const next = await derive(join(directory, 'next'), `${project}-server`, `${project}-next:test`, { 'store.js': nextStore, 'package.json': nextPackage },
       'COPY store.js /app/dist/store.js\nCOPY package.json /app/package.json');
     const broken = await derive(join(directory, 'broken'), `${project}-server`, `${project}-broken:test`, {}, 'CMD ["node", "-e", "process.exit(1)"]');
@@ -122,7 +123,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
     await t.test('upgrade migrates the source after a successful trial', async () => {
       const { code, out } = await cli('upgrade', '--image', `${project}-next:test`, ...deployment);
       assert.equal(code, 0, JSON.stringify(out));
-      assert.deepEqual([out.previous.version, out.next.version], ['0.2.0', '0.3.0-test']);
+      assert.deepEqual([out.previous.version, out.next.version], [serverPackage.version, `${serverPackage.version}-next`]);
       assert.deepEqual(out.trial, { ok: true, schema: migrated });
       t.diagnostic(`upgrade: backup downtime ${out.source.downtimeMs} ms, switch downtime ${out.switch.downtimeMs} ms`);
       upgradeBackup = out.backup.path;
@@ -131,7 +132,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
       assert.equal(await schema(next), migrated);
       await sync('/h:before');
       await api('/me', 'GET', undefined, admin);
-      assert.equal(await readFile(COMPOSE, 'utf8').then(text => text.includes('0.3.0-test')), false);
+      assert.equal(await readFile(COMPOSE, 'utf8').then(text => text.includes('-next')), false);
     });
 
     await t.test('the old image alone cannot open the migrated database', async () => {
