@@ -15,6 +15,8 @@ const root = resolve(import.meta.dirname, '../..');
 const CLI = join(root, 'deploy/backup/cli.ts');
 const COMPOSE = join(root, 'deploy/local/compose.yaml');
 const docker = async (...args) => (await exec('docker', args, { maxBuffer: 64 * 1024 * 1024 })).stdout;
+// The gateway accepts only encrypted LiveSync document shapes.
+const chunk = data => ({ type: 'leaf', e_: true, data: `%=${data}` });
 
 async function cli(...args) {
   try {
@@ -96,7 +98,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
     await api('/me/password', 'PUT', { currentPassword: adminPassword, password: 'admin-updated-password' }, admin);
     vault = await api('/vaults', 'POST', { name: 'notes' }, admin, 201);
     device = await api(`/vaults/${vault.id}/devices`, 'POST', { name: 'desktop' }, admin, 201);
-    await sync('/before', 'PUT', { body: 'before upgrade' }, 201);
+    await sync('/h:before', 'PUT', chunk('before upgrade'), 201);
     let upgradeBackup;
 
     await t.test('a broken new version fails the trial and leaves the source untouched', async () => {
@@ -105,7 +107,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
       assert.equal(out.backup.ok, true); assert.equal(out.trial.ok, false);
       assert.equal(out.switch, undefined);
       assert.equal(await runningImage(), baseId);
-      await sync('/before');
+      await sync('/h:before');
       assert.equal((await docker('ps', '-a', '-q', '--filter', `name=${project}-upgrade-`)).trim(), '');
       assert.equal((await docker('volume', 'ls', '-q', '--filter', `name=${project}-upgrade-`)).trim(), '');
     });
@@ -127,7 +129,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
       assert.equal((await cli('verify', upgradeBackup)).code, 0);
       assert.equal(await runningImage(), next);
       assert.equal(await schema(next), migrated);
-      await sync('/before');
+      await sync('/h:before');
       await api('/me', 'GET', undefined, admin);
       assert.equal(await readFile(COMPOSE, 'utf8').then(text => text.includes('0.3.0-test')), false);
     });
@@ -144,7 +146,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
     });
 
     await t.test('rollback restores the pre-upgrade image and data and keeps the upgraded state', async () => {
-      await sync('/after-upgrade', 'PUT', { body: 'written by the new version' }, 201);
+      await sync('/h:after-upgrade', 'PUT', chunk('written by the new version'), 201);
       await appendFile(env, '# changed after upgrade\n');
       const { code, out } = await cli('rollback', upgradeBackup, ...deployment);
       assert.equal(code, 0, JSON.stringify(out));
@@ -153,8 +155,8 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
       assert.equal(out.schema, current);
       assert.equal(await runningImage(), baseId);
       assert.equal(await schema(baseId), current);
-      await sync('/before');
-      await sync('/after-upgrade', 'GET', undefined, 404);
+      await sync('/h:before');
+      await sync('/h:after-upgrade', 'GET', undefined, 404);
       await api('/me', 'GET', undefined, admin, 401);
       admin = (await api('/sessions', 'POST', { username: 'admin', password: 'admin-updated-password' }, undefined, 201)).token;
       const kept = out.preRollbackBackup.path;
@@ -176,7 +178,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
       assert.equal((await container()).State, 'exited');
       await docker('tag', baseId, `${project}-server`);
       await compose('up', '-d', '--wait', '--no-build', '--force-recreate', 'server');
-      await sync('/before');
+      await sync('/h:before');
     });
   } finally {
     await docker('compose', '-p', project, 'down', '-v').catch(() => {});

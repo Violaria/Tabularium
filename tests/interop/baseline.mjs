@@ -61,7 +61,7 @@ async function cli(client, ...args) {
     '--vault', client.vault, ...args], { cwd: root, timeout: 90_000, maxBuffer: 8 * 1024 * 1024 });
   return result;
 }
-async function makeClient(name, executable = cliPath, database = 'baseline') {
+async function makeClient(name, executable = cliPath, database = 'baseline', extra = {}) {
   const directory = join(runDir, name);
   const client = { cli: executable, db: join(directory, 'db'), vault: join(directory, 'vault'), settings: join(directory, 'settings.json') };
   await mkdir(client.vault, { recursive: true });
@@ -72,7 +72,7 @@ async function makeClient(name, executable = cliPath, database = 'baseline') {
   Object.assign(settings, {
     couchDB_URI: gateway ? `${origin}/sync` : origin, couchDB_DBNAME: credentials.database, couchDB_USER: credentials.username, couchDB_PASSWORD: credentials.password,
     isConfigured: true, encrypt: true, passphrase, E2EEAlgorithm: 'v2', usePathObfuscation: true,
-    liveSync: false, syncOnStart: false, syncOnSave: false, usePluginSync: false,
+    liveSync: false, syncOnStart: false, syncOnSave: false, usePluginSync: false, ...extra,
   });
   await writeFile(client.settings, JSON.stringify(settings), { mode: 0o600 });
   client.device = credentials.username;
@@ -346,6 +346,18 @@ try {
     report.deleteEdit = { preservedLocally: true, recoverableRevisions: preserved.map(doc => doc._rev),
       remoteLeafStates: leaves.map(doc => ({ revision: doc._rev, deleted: doc.deleted === true })),
       requiresUserResolution: true };
+  });
+  if (gateway) await scenario('unencrypted-client-rejected', async () => {
+    const database = 'plaintext-baseline';
+    await gateway.create(database);
+    const plain = await makeClient('plaintext', cliPath, database, { encrypt: false, passphrase: '', usePathObfuscation: false });
+    await put(plain, 'notes/明文笔记.md', '# Plaintext marker 7f3a\n');
+    await cli(plain, 'mirror', plain.vault);
+    await cli(plain, 'sync').catch(() => {});
+    const response = await fetch(`${upstream}/${physical(database)}/_all_docs?include_docs=true`, { headers: { Authorization: auth } });
+    const { rows } = await response.json();
+    assert.deepEqual(rows.map(row => row.id).filter(id => id !== 'obsydian_livesync_version'), []);
+    assert(!JSON.stringify(rows).includes('Plaintext marker') && !JSON.stringify(rows).includes('明文笔记'));
   });
   if (gateway) await scenario('gateway-rebuild', async () => {
     const database = 'rebuild-baseline';

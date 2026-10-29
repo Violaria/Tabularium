@@ -15,6 +15,8 @@ const root = resolve(import.meta.dirname, '../..');
 const CLI = join(root, 'deploy/backup/cli.ts');
 const COMPOSE = join(root, 'deploy/local/compose.yaml');
 const docker = async (...args) => (await exec('docker', args, { maxBuffer: 64 * 1024 * 1024 })).stdout;
+// The gateway accepts only encrypted LiveSync document shapes.
+const chunk = data => ({ type: 'leaf', e_: true, data: `%=${data}` });
 const run = id => `tbk${Date.now().toString(36)}${id}`;
 
 async function cli(...args) {
@@ -95,19 +97,17 @@ test('offline backup and restore into a fresh project', { timeout: 900_000 }, as
     const users = await sourceApi('/users', 'GET', undefined, admin);
     await sourceApi(`/users/${users.find(u => u.username === 'carol').id}`, 'PATCH', { disabled: true }, admin);
 
-    // Revisions, a conflict, a deletion, an attachment and a local document in alice's vault; one document in bob's.
-    let rev = (await sourceSync(vaultA.id, '/note', valid, 'PUT', { body: 'v1' }, 201)).rev;
-    rev = (await sourceSync(vaultA.id, '/note', valid, 'PUT', { _rev: rev, body: 'v2' }, 201)).rev;
+    // Revisions, a conflict, a deletion, a large chunk and a local document in alice's vault; one document in bob's.
+    let rev = (await sourceSync(vaultA.id, '/h:note', valid, 'PUT', chunk('v1'), 201)).rev;
+    rev = (await sourceSync(vaultA.id, '/h:note', valid, 'PUT', { _rev: rev, ...chunk('v2') }, 201)).rev;
     await sourceSync(vaultA.id, '/_bulk_docs', valid, 'POST', { new_edits: false, docs: [
-      { _id: 'conflict', _rev: '1-aaaa', side: 'a' }, { _id: 'conflict', _rev: '1-bbbb', side: 'b' },
+      { _id: 'h:conflict', _rev: '1-aaaa', ...chunk('a') }, { _id: 'h:conflict', _rev: '1-bbbb', ...chunk('b') },
     ] }, 201);
-    const gone = (await sourceSync(vaultA.id, '/gone', valid, 'PUT', { body: 'x' }, 201)).rev;
-    await sourceSync(vaultA.id, '/gone', valid, 'PUT', { _rev: gone, _deleted: true }, 200);
-    await sourceSync(vaultA.id, '/attachment', valid, 'PUT', { _attachments: {
-      'blob.bin': { content_type: 'application/octet-stream', data: randomBytes(4096).toString('base64') },
-    } }, 201);
+    const gone = (await sourceSync(vaultA.id, '/h:gone', valid, 'PUT', chunk('x'), 201)).rev;
+    await sourceSync(vaultA.id, '/h:gone', valid, 'PUT', { _rev: gone, _deleted: true }, 200);
+    await sourceSync(vaultA.id, '/h:binary', valid, 'PUT', chunk(randomBytes(4096).toString('base64')), 201);
     await sourceSync(vaultA.id, '/_local/checkpoint', valid, 'PUT', { last_seq: 'opaque-1' }, 201);
-    await sourceSync(vaultB.id, '/bob-note', bobDevice, 'PUT', { body: 'bob' }, 201);
+    await sourceSync(vaultB.id, '/h:bob-note', bobDevice, 'PUT', chunk('bob'), 201);
 
     // Expiry is fixed at issue time, so age the device directly while the gateway is stopped.
     await compose(source, env, 'stop', 'server');
@@ -122,14 +122,14 @@ test('offline backup and restore into a fresh project', { timeout: 900_000 }, as
       changes: (await call(vault, '/_changes?style=all_docs', device)).results
         .map(({ id, changes, deleted }) => ({ id, changes: changes.map(c => c.rev).sort(), deleted }))
         .sort((x, y) => x.id.localeCompare(y.id)),
-      conflict: (await call(vault, '/conflict?open_revs=all', device, 'GET', undefined, 200, { accept: 'application/json' }))
+      conflict: (await call(vault, '/h:conflict?open_revs=all', device, 'GET', undefined, 200, { accept: 'application/json' }))
         .map(leaf => leaf.ok).sort((x, y) => x._rev.localeCompare(y._rev)),
       local: await call(vault, '/_local/checkpoint', device),
     });
     const before = { a: await snapshot(sourceSync, vaultA.id, valid), b: await sourceSync(vaultB.id, '/_all_docs?include_docs=true', bobDevice),
       audit: await sourceApi('/admin/audit', 'GET', undefined, admin), users: await sourceApi('/users', 'GET', undefined, admin) };
     assert.equal(before.a.conflict.length, 2);
-    assert.ok(before.a.changes.find(c => c.id === 'gone').deleted);
+    assert.ok(before.a.changes.find(c => c.id === 'h:gone').deleted);
 
     let backup;
     await t.test('backup of a running deployment resumes the source', async () => {
@@ -145,7 +145,7 @@ test('offline backup and restore into a fresh project', { timeout: 900_000 }, as
       assert.equal(manifest.couchdb[`tab_${vaultA.id.replaceAll('-', '')}`].local, 1);
       assert.ok(!(await readFile(join(backup, 'manifest.json'), 'utf8')).includes(adminPassword));
       assert.ok(await running(source, env, 'server') && await running(source, env, 'couchdb'));
-      await sourceSync(vaultA.id, '/note', valid);
+      await sourceSync(vaultA.id, '/h:note', valid);
       assert.equal((await cli('verify', backup)).code, 0);
     });
 
@@ -169,9 +169,9 @@ test('offline backup and restore into a fresh project', { timeout: 900_000 }, as
       for (const device of [revoked, expired]) await restoredSync(vaultA.id, '/', device, 'GET', undefined, 401);
       await restoredSync(vaultC.id, '/', carolDevice, 'GET', undefined, 401);
       await login(restoredApi, 'carol', 'carol-updated-password').then(() => assert.fail('disabled account logged in'), () => {});
-      await restoredSync(vaultA.id, '/after-restore', valid, 'PUT', { body: 'new' }, 201);
+      await restoredSync(vaultA.id, '/h:after-restore', valid, 'PUT', chunk('new'), 201);
       // The source deployment is untouched by the restore.
-      await sourceSync(vaultA.id, '/after-restore', valid, 'GET', undefined, 404);
+      await sourceSync(vaultA.id, '/h:after-restore', valid, 'GET', undefined, 404);
     });
 
     await t.test('verify rejects tampered, missing, partial and incomplete backups', async () => {
@@ -247,7 +247,7 @@ test('offline backup and restore into a fresh project', { timeout: 900_000 }, as
       assert.equal((await cli('verify', out.backup.path)).code, 0);
       // After a failed port bind Docker restarts the container without its port mapping, so recreate it.
       await compose(source, env, 'up', '-d', '--wait', '--no-build', '--force-recreate', 'server');
-      await sourceSync(vaultA.id, '/note', valid);
+      await sourceSync(vaultA.id, '/h:note', valid);
     });
   } finally {
     for (const project of projects) await docker('compose', '-p', project, 'down', '-v').catch(() => {});
