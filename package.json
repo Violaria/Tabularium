@@ -10,7 +10,7 @@
   "packageManager": "npm@11.6.1",
   "scripts": {
     "bootstrap": "npm ci && npm run build:sorting && npm ci --prefix apps/obsidian",
-    "check": "npm run build:sorting && npm run check:server && npm run check:backup && node --check tests/interop/gateway-baseline.mjs && node --check tests/interop/baseline.mjs && node apps/obsidian/node_modules/typescript/bin/tsc -p tests/interop/tsconfig.json && npm run check --prefix apps/obsidian",
+    "check": "npm run build:sorting && npm run check:server && npm run check:backup && npm run check:release && node --check tests/interop/gateway-baseline.mjs && node --check tests/interop/baseline.mjs && node apps/obsidian/node_modules/typescript/bin/tsc -p tests/interop/tsconfig.json && npm run check --prefix apps/obsidian",
     "build": "npm run build:sorting && npm run build:server && npm run build --prefix apps/obsidian && npm run build --prefix apps/obsidian --workspace self-hosted-livesync-cli",
     "test:unit": "npm run test:unit --prefix apps/obsidian",
     "test:baseline": "node tests/interop/baseline.mjs",
@@ -23,6 +23,9 @@
     "test:sorting": "npm test --workspace @tabularium/custom-sort",
     "test:sorting:obsidian": "npm run build:sorting && npm run build --prefix apps/obsidian && npm run test:tabularium:sorting --prefix apps/obsidian",
     "check:backup": "tsc -p deploy/backup",
+    "check:release": "tsc -p deploy/release",
+    "release": "node deploy/release/build.ts",
+    "test:release": "node tests/release/clean-install.mjs",
     "test:backup": "node --test --test-concurrency=1 tests/backup/*.test.mjs",
     "test:backup:clients": "node tests/backup/clients.mjs",
     "test:server:browser": "npm run test:browser --workspace @tabularium/server"

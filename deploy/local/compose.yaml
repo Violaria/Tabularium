@@ -8,6 +8,7 @@ services:
       TABULARIUM_ADMIN_PASSWORD: ${TABULARIUM_ADMIN_PASSWORD:?Set initial administrator password}
       TABULARIUM_PUBLIC_URL: ${TABULARIUM_PUBLIC_URL:-}
       TABULARIUM_ORIGINS: ${TABULARIUM_ORIGINS:-app://obsidian.md,capacitor://localhost,http://localhost}
+      TABULARIUM_AUDIT_DAYS: ${TABULARIUM_AUDIT_DAYS:-365}
       COUCHDB_URL: http://couchdb:5984
       COUCHDB_ADMIN_USER: admin
       COUCHDB_ADMIN_PASSWORD: ${COUCHDB_ADMIN_PASSWORD:?Set CouchDB administrator password}
