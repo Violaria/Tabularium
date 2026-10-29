@@ -10,7 +10,9 @@
   },
   "include": [
     "fast-fetch.ts",
-    "custom-sorting.ts"
+    "custom-sorting.ts",
+    "plugin-login.ts",
+    "obsidian-runtime.ts"
   ],
   "exclude": []
 }

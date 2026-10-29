@@ -43,7 +43,7 @@ try {
   assert.deepEqual(ordered.filter(name => name !== 'sortspec.md'), ['Zeta.md', 'Alpha.md', 'Beta.md']);
   assert.equal(await evaluate<boolean>("return JSON.stringify(JSON.stringify(globalThis.sortTestNames('Default'))===JSON.stringify(globalThis.sortTestDefault));"), true);
   report.scenarios.push('manual-order-and-unmatched-folder');
-  const settingsPath = join(vault.path, '.obsidian/plugins/obsidian-livesync');
+  const settingsPath = join(vault.path, '.obsidian/plugins/tabularium');
   const initialSyncSettings = await readFile(join(settingsPath, 'data.json'), 'utf8');
   await evaluate(`
     const sorting=app.plugins.plugins['tabularium'].sorting;
@@ -77,9 +77,9 @@ try {
   `);
   report.scenarios.push('invalid-spec-suspends-sorting');
   await evaluate(`
-    await app.plugins.disablePlugin('obsidian-livesync');
+    await app.plugins.disablePlugin('tabularium');
     if(globalThis.sortTestView.getSortedFolderItems!==globalThis.sortTestOriginal) throw new Error('File explorer patch retained after unload');
-    await app.plugins.enablePlugin('obsidian-livesync');
+    await app.plugins.enablePlugin('tabularium');
     const deadline=Date.now()+30000;
     while(!app.plugins.plugins['tabularium']?.sorting?.ready && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
     const sorting=app.plugins.plugins['tabularium'].sorting;
@@ -90,9 +90,9 @@ try {
   assert.deepEqual((await evaluate<string[]>("return JSON.stringify(globalThis.sortTestNames('Notes'));")).filter(name => name !== 'sortspec.md'), ['Zeta.md', 'Alpha.md', 'Beta.md']);
   report.scenarios.push('unload-restores-method-and-reload-retains-settings');
   await evaluate(`
-    await app.plugins.disablePlugin('obsidian-livesync');
+    await app.plugins.disablePlugin('tabularium');
     app.plugins.enabledPlugins.add('custom-sort');
-    await app.plugins.enablePlugin('obsidian-livesync');
+    await app.plugins.enablePlugin('tabularium');
     if(app.plugins.plugins['tabularium'].sorting) throw new Error('Both sorting components enabled');
     app.plugins.enabledPlugins.delete('custom-sort');
     return JSON.stringify(true);

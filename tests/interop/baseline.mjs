@@ -396,6 +396,19 @@ try {
     await cli(a, 'pull', 'notes/重建之后.md', received);
     assert.equal(await readFile(received, 'utf8'), '# Written after fetching the rebuilt database\n');
   });
+  if (gateway) await scenario('plugin-login', async () => {
+    const initial = randomBytes(12).toString('hex');
+    await gateway.createUser('obsidian-user', initial);
+    const app = join(root, 'apps/obsidian');
+    const binaryRoot = join(app, '_testdata/obsidian-1.12.7/squashfs-root');
+    const result = await exec(process.execPath, [join(app, 'node_modules/tsx/dist/cli.mjs'), '--tsconfig', join(app, 'tsconfig.json'), join(root, 'tests/interop/plugin-login.ts')], {
+      cwd: app, timeout: 600_000, maxBuffer: 8 * 1024 * 1024,
+      env: { ...process.env, DISPLAY: '', WAYLAND_DISPLAY: '', OBSIDIAN_BINARY: join(binaryRoot, 'obsidian'), OBSIDIAN_CLI: join(binaryRoot, 'obsidian-cli'),
+        TABULARIUM_URL: origin.replace(/\/sync$/, ''), TABULARIUM_USER: 'obsidian-user', TABULARIUM_PASSWORD: initial,
+        E2E_OBSIDIAN_CLEANUP_STALE_PROCESSES: 'false', BASELINE_RUN_DIR: runDir },
+    }).catch(error => { throw new Error(redact(`${error.message}\n${error.stdout}\n${error.stderr}`)); });
+    await writeFile(join(runDir, 'plugin-login.log'), redact(result.stdout + result.stderr));
+  });
   await scenario('desktop-obsidian', async () => {
     if (gateway) { await runGatewayDesktop(false); return; }
     const app = join(root, 'apps/obsidian');

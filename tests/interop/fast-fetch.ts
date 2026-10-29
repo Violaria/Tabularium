@@ -9,6 +9,7 @@ import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../.
 import { loadCouchDbConfig, createCouchDbDatabase, deleteCouchDbDatabase } from '../../apps/obsidian/test/e2e-obsidian/runner/couchdb.ts';
 import { createE2eCouchDbPluginData, createE2eObsidianDeviceLocalState, waitForLiveSyncCoreReady, prepareRemote, pushLocalChanges } from '../../apps/obsidian/test/e2e-obsidian/runner/liveSyncWorkflow.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
+import { pinObsidianRuntime } from './obsidian-runtime.ts';
 
 const exec = promisify(execFile);
 const config = await loadCouchDbConfig();
@@ -19,11 +20,7 @@ const stage = process.env.BASELINE_STAGE;
 const dbName = provisioned ? config.dbPrefix : `fast-fetch-${Date.now()}`;
 const temporary = await mkdtemp(join(process.env.BASELINE_RUN_DIR!, 'fast-fetch-'));
 const vault = await createTemporaryVault();
-// Keep the pinned Obsidian runtime: without this the app downloads and loads a newer build into the temporary profile.
-for (const path of [join(vault.homePath, '.config/obsidian'), join(vault.xdgConfigPath, 'obsidian'), join(vault.homePath, 'Library/Application Support/obsidian'), vault.userDataPath]) {
-  const registry = join(path, 'obsidian.json');
-  await writeFile(registry, JSON.stringify({ ...JSON.parse(await readFile(registry, 'utf8')), updateDisabled: true }, null, 4));
-}
+await pinObsidianRuntime(vault);
 const cli = resolve('src/apps/cli/dist/index.cjs');
 const database = join(temporary, 'database');
 const settingsPath = join(temporary, 'settings.json');
