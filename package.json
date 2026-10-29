@@ -23,7 +23,7 @@
     "test:sorting": "npm test --workspace @tabularium/custom-sort",
     "test:sorting:obsidian": "npm run build:sorting && npm run build --prefix apps/obsidian && npm run test:tabularium:sorting --prefix apps/obsidian",
     "check:backup": "tsc -p deploy/backup",
-    "test:backup": "node --test tests/backup/*.test.mjs",
+    "test:backup": "node --test --test-concurrency=1 tests/backup/*.test.mjs",
     "test:backup:clients": "node tests/backup/clients.mjs",
     "test:server:browser": "npm run test:browser --workspace @tabularium/server"
   },

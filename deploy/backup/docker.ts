@@ -26,7 +26,7 @@ interface ComposeService {
   volumes?: { type: string; source: string; target: string }[];
 }
 export interface ComposeConfig { services: Record<string, ComposeService>; volumes: Record<string, { name: string }> }
-export interface ContainerState { id: string; running: boolean; exitCode: number }
+export interface ContainerState { id: string; running: boolean; healthy: boolean; exitCode: number }
 
 export class Compose {
   readonly files: string[];
@@ -48,8 +48,8 @@ export class Compose {
   async state(service: string): Promise<ContainerState | undefined> {
     const line = (await this.run('ps', '-a', '--format', 'json', service)).trim().split('\n')[0];
     if (!line) return undefined;
-    const row = JSON.parse(line) as { ID: string; State: string; ExitCode: number };
-    return { id: row.ID, running: row.State === 'running', exitCode: row.ExitCode };
+    const row = JSON.parse(line) as { ID: string; State: string; Health: string; ExitCode: number };
+    return { id: row.ID, running: row.State === 'running', healthy: row.Health === 'healthy', exitCode: row.ExitCode };
   }
   // Runs a CouchDB request inside the container with its own administrator environment, so no secret reaches the host command line.
   async couch(path: string) {
