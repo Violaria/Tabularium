@@ -61,8 +61,11 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
     images.push(baseId);
     const store = await readFile(join(root, 'apps/server/dist/store.js'), 'utf8');
     assert.equal(store.split('    return db;').length, 2);
-    const nextStore = store.replace('else if (version !== 2)', 'else if (version !== 2 && version !== 3)').replace('    return db;',
-      "    if (db.prepare('PRAGMA user_version').get().user_version === 2) db.exec('BEGIN; CREATE TABLE upgrade_probe (id INTEGER PRIMARY KEY) STRICT; PRAGMA user_version=3; COMMIT;');\n    return db;");
+    // The test release adds one migration on top of the current schema.
+    const current = Number(store.match(/if \(version !== (\d+)\)/)[1]);
+    const migrated = current + 1;
+    const nextStore = store.replace(`if (version !== ${current})`, `if (version !== ${current} && version !== ${migrated})`).replace('    return db;',
+      `    if (db.prepare('PRAGMA user_version').get().user_version === ${current}) db.exec('BEGIN; CREATE TABLE upgrade_probe (id INTEGER PRIMARY KEY) STRICT; PRAGMA user_version=${migrated}; COMMIT;');\n    return db;`);
     const nextPackage = JSON.stringify({ ...JSON.parse(await readFile(join(root, 'apps/server/package.json'), 'utf8')), version: '0.3.0-test' });
     const next = await derive(join(directory, 'next'), `${project}-server`, `${project}-next:test`, { 'store.js': nextStore, 'package.json': nextPackage },
       'COPY store.js /app/dist/store.js\nCOPY package.json /app/package.json');
@@ -118,12 +121,12 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
       const { code, out } = await cli('upgrade', '--image', `${project}-next:test`, ...deployment);
       assert.equal(code, 0, JSON.stringify(out));
       assert.deepEqual([out.previous.version, out.next.version], ['0.2.0', '0.3.0-test']);
-      assert.deepEqual(out.trial, { ok: true, schema: 3 });
+      assert.deepEqual(out.trial, { ok: true, schema: migrated });
       t.diagnostic(`upgrade: backup downtime ${out.source.downtimeMs} ms, switch downtime ${out.switch.downtimeMs} ms`);
       upgradeBackup = out.backup.path;
       assert.equal((await cli('verify', upgradeBackup)).code, 0);
       assert.equal(await runningImage(), next);
-      assert.equal(await schema(next), 3);
+      assert.equal(await schema(next), migrated);
       await sync('/before');
       await api('/me', 'GET', undefined, admin);
       assert.equal(await readFile(COMPOSE, 'utf8').then(text => text.includes('0.3.0-test')), false);
@@ -131,7 +134,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
 
     await t.test('the old image alone cannot open the migrated database', async () => {
       await assert.rejects(docker('run', '--rm', '--network', 'none', '--entrypoint', 'node', '-v', `${project}_application:/data`, baseId, '-e',
-        "import('/app/dist/store.js').then(m => m.openStore(process.env.TABULARIUM_DATABASE))"), /Unsupported database schema: 3/);
+        "import('/app/dist/store.js').then(m => m.openStore(process.env.TABULARIUM_DATABASE))"), new RegExp(`Unsupported database schema: ${migrated}`));
     });
 
     await t.test('rollback refuses a backup of another project', async () => {
@@ -147,9 +150,9 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
       assert.equal(code, 0, JSON.stringify(out));
       assert.deepEqual(out.changedConfiguration, ['tabularium.env']);
       t.diagnostic(`rollback: downtime ${out.downtimeMs} ms`);
-      assert.equal(out.schema, 2);
+      assert.equal(out.schema, current);
       assert.equal(await runningImage(), baseId);
-      assert.equal(await schema(baseId), 2);
+      assert.equal(await schema(baseId), current);
       await sync('/before');
       await sync('/after-upgrade', 'GET', undefined, 404);
       await api('/me', 'GET', undefined, admin, 401);
@@ -157,7 +160,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
       const kept = out.preRollbackBackup.path;
       assert.equal((await cli('verify', kept)).code, 0);
       const manifest = JSON.parse(await readFile(join(kept, 'manifest.json'), 'utf8'));
-      assert.equal(manifest.sqlite.schema, 3);
+      assert.equal(manifest.sqlite.schema, migrated);
       assert.equal(manifest.versions.server.image, next);
       assert.equal(manifest.couchdb[`tab_${vault.id.replaceAll('-', '')}`].docs, 2);
     });

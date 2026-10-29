@@ -141,7 +141,7 @@ test('offline backup and restore into a fresh project', { timeout: 900_000 }, as
       const manifest = JSON.parse(await readFile(join(backup, 'manifest.json'), 'utf8'));
       for (const name of ['manifest.json', ...manifest.files.map(f => f.name)]) assert.equal((await stat(join(backup, name))).mode & 0o777, 0o600);
       assert.deepEqual(manifest.files.map(f => f.name), ['application.tar', 'notes.tar', 'config.tar', 'server-image.tar']);
-      assert.equal(manifest.sqlite.schema, 2); assert.equal(manifest.sqlite.vaults, 3);
+      assert.equal(manifest.sqlite.schema, Number((await readFile(join(root, 'apps/server/dist/store.js'), 'utf8')).match(/if \(version !== (\d+)\)/)[1])); assert.equal(manifest.sqlite.vaults, 3);
       assert.equal(manifest.couchdb[`tab_${vaultA.id.replaceAll('-', '')}`].local, 1);
       assert.ok(!(await readFile(join(backup, 'manifest.json'), 'utf8')).includes(adminPassword));
       assert.ok(await running(source, env, 'server') && await running(source, env, 'couchdb'));

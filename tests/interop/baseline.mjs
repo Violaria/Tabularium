@@ -75,6 +75,7 @@ async function makeClient(name, executable = cliPath, database = 'baseline') {
     liveSync: false, syncOnStart: false, syncOnSave: false, usePluginSync: false,
   });
   await writeFile(client.settings, JSON.stringify(settings), { mode: 0o600 });
+  client.device = credentials.username;
   return client;
 }
 async function put(client, path, contents) {
@@ -345,6 +346,43 @@ try {
     report.deleteEdit = { preservedLocally: true, recoverableRevisions: preserved.map(doc => doc._rev),
       remoteLeafStates: leaves.map(doc => ({ revision: doc._rev, deleted: doc.deleted === true })),
       requiresUserResolution: true };
+  });
+  if (gateway) await scenario('gateway-rebuild', async () => {
+    const database = 'rebuild-baseline';
+    await gateway.create(database);
+    const a = await makeClient('rebuild-a', cliPath, database);
+    const b = await makeClient('rebuild-b', cliPath, database);
+    await put(a, 'notes/重建前.md', '# Before rebuild\n');
+    await cli(a, 'mirror', a.vault);
+    await cli(a, 'sync');
+    await cli(b, 'fetch', '--force', '--write-settings');
+    await equalVaults(a, b);
+    const output = error => `${error.stdout ?? ''}${error.stderr ?? ''}`;
+    // Without a rebuild window the gateway refuses the database deletion.
+    await assert.rejects(cli(a, 'rebuild', '--force'), error => output(error).includes('Rebuild failed'));
+    await gateway.arm(database, a.device);
+    await put(a, 'notes/重建后.md', '# Added before the rebuild upload\n');
+    await cli(a, 'rebuild', '--force');
+    // Upstream milestone locking stops devices that have not fetched the rebuilt database.
+    await assert.rejects(cli(b, 'sync'), error => output(error).includes('locked'));
+    // The upstream CLI counts files that already match the fetched database as failed, so fetch into an empty vault.
+    await rm(b.vault, { recursive: true });
+    await mkdir(b.vault);
+    await cli(b, 'fetch', '--force');
+    await equalVaults(a, b);
+    const legacy = await makeClient('rebuild-legacy', join(root, '.test-runs/legacy/src/apps/cli/dist/index.cjs'), database);
+    await cli(legacy, 'fetch', '--force', '--write-settings');
+    await equalVaults(a, legacy);
+    // The rebuilding CLI is locked out as well until the remote is unlocked once every device has fetched.
+    await cli(a, 'unlock-remote');
+    await put(b, 'notes/重建之后.md', '# Written after fetching the rebuilt database\n');
+    await cli(b, 'mirror', b.vault);
+    await cli(b, 'sync');
+    await cli(a, 'sync');
+    // After its own rebuild the upstream CLI's storage scan also reports matching files as failed, so read from its database.
+    const received = join(runDir, 'rebuild-received.md');
+    await cli(a, 'pull', 'notes/重建之后.md', received);
+    assert.equal(await readFile(received, 'utf8'), '# Written after fetching the rebuilt database\n');
   });
   await scenario('desktop-obsidian', async () => {
     if (gateway) { await runGatewayDesktop(false); return; }

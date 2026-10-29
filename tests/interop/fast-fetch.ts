@@ -19,6 +19,11 @@ const stage = process.env.BASELINE_STAGE;
 const dbName = provisioned ? config.dbPrefix : `fast-fetch-${Date.now()}`;
 const temporary = await mkdtemp(join(process.env.BASELINE_RUN_DIR!, 'fast-fetch-'));
 const vault = await createTemporaryVault();
+// Keep the pinned Obsidian runtime: without this the app downloads and loads a newer build into the temporary profile.
+for (const path of [join(vault.homePath, '.config/obsidian'), join(vault.xdgConfigPath, 'obsidian'), join(vault.homePath, 'Library/Application Support/obsidian'), vault.userDataPath]) {
+  const registry = join(path, 'obsidian.json');
+  await writeFile(registry, JSON.stringify({ ...JSON.parse(await readFile(registry, 'utf8')), updateDisabled: true }, null, 4));
+}
 const cli = resolve('src/apps/cli/dist/index.cjs');
 const database = join(temporary, 'database');
 const settingsPath = join(temporary, 'settings.json');

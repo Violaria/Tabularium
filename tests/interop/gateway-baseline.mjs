@@ -34,6 +34,7 @@ export async function startTestGateway(runDir, upstream, password, secrets) {
       secrets.push(device.password, Buffer.from(`${device.username}:${device.password}`).toString('base64'));
       return { database: vault.id, username: device.username, password: device.password };
     },
+    async arm(name, deviceId) { await api(`/vaults/${vaults.get(name).id}/rebuild`, 'POST', { deviceId, confirm: name }); },
     async restart(upstream) { await gateway.close(); config.couch.url = upstream; gateway = await createGateway(config); url = await gateway.listen(); },
     async close() { await gateway.close(); },
   };
