@@ -3,12 +3,12 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { createGateway } from '../../apps/server/dist/server.js';
 
-export async function startTestGateway(runDir, upstream, password, secrets) {
+export async function startTestGateway(runDir, upstream, password, secrets, extra = {}) {
   const syncPassword = randomBytes(24).toString('hex');
   secrets.push(syncPassword);
   const config = { database: join(runDir, 'gateway.sqlite'), bootstrapUser: 'baseline', bootstrapPassword: password,
     origins: ['app://obsidian.md', 'http://localhost', 'capacitor://localhost'], loginLimit: 100,
-    couch: { url: upstream, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword } };
+    couch: { url: upstream, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword }, ...extra };
   let gateway = await createGateway(config);
   let url = await gateway.listen();
   let token;

@@ -11,6 +11,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const gatewayMode = process.argv.includes('--gateway');
 const secrets = [];
 let gateway;
+let sink;
 const physical = name => gateway ? gateway.physical(name) : name;
 const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, '../..');
@@ -156,7 +157,11 @@ try {
   await writeFile(join(runDir, 'resources.json'), JSON.stringify({ runId, upstream, database: 'baseline' }));
   if (gatewayMode) {
     const { startTestGateway } = await import('./gateway-baseline.mjs');
-    gateway = await startTestGateway(runDir, upstream, password, secrets);
+    const { startSmtpSink } = await import('../../apps/server/test/smtp-sink.mjs');
+    await mkdir(join(runDir, 'kindle-mail'));
+    sink = await startSmtpSink({ directory: join(runDir, 'kindle-mail') });
+    gateway = await startTestGateway(runDir, upstream, password, secrets, {
+      smtp: { host: '127.0.0.1', port: sink.port, security: 'none', user: sink.user, password: sink.password, from: 'tabularium@example.test' } });
     await gateway.create('baseline');
   } else {
     const create = await fetch(`${upstream}/baseline`, { method: 'PUT', headers: { Authorization: auth } });
@@ -396,19 +401,22 @@ try {
     await cli(a, 'pull', 'notes/重建之后.md', received);
     assert.equal(await readFile(received, 'utf8'), '# Written after fetching the rebuilt database\n');
   });
-  if (gateway) await scenario('plugin-login', async () => {
+  // Runs a real-Obsidian script against the gateway as a newly created user.
+  async function pluginScript(name, user) {
     const initial = randomBytes(12).toString('hex');
-    await gateway.createUser('obsidian-user', initial);
+    await gateway.createUser(user, initial);
     const app = join(root, 'apps/obsidian');
     const binaryRoot = join(app, '_testdata/obsidian-1.12.7/squashfs-root');
-    const result = await exec(process.execPath, [join(app, 'node_modules/tsx/dist/cli.mjs'), '--tsconfig', join(app, 'tsconfig.json'), join(root, 'tests/interop/plugin-login.ts')], {
+    const result = await exec(process.execPath, [join(app, 'node_modules/tsx/dist/cli.mjs'), '--tsconfig', join(app, 'tsconfig.json'), join(root, `tests/interop/${name}.ts`)], {
       cwd: app, timeout: 600_000, maxBuffer: 8 * 1024 * 1024,
       env: { ...process.env, DISPLAY: '', WAYLAND_DISPLAY: '', OBSIDIAN_BINARY: join(binaryRoot, 'obsidian'), OBSIDIAN_CLI: join(binaryRoot, 'obsidian-cli'),
-        TABULARIUM_URL: origin.replace(/\/sync$/, ''), TABULARIUM_USER: 'obsidian-user', TABULARIUM_PASSWORD: initial,
-        E2E_OBSIDIAN_CLEANUP_STALE_PROCESSES: 'false', BASELINE_RUN_DIR: runDir },
+        TABULARIUM_URL: origin.replace(/\/sync$/, ''), TABULARIUM_USER: user, TABULARIUM_PASSWORD: initial,
+        E2E_OBSIDIAN_CLEANUP_STALE_PROCESSES: 'false', BASELINE_RUN_DIR: runDir, KINDLE_MAIL_DIR: join(runDir, 'kindle-mail') },
     }).catch(error => { throw new Error(redact(`${error.message}\n${error.stdout}\n${error.stderr}`)); });
-    await writeFile(join(runDir, 'plugin-login.log'), redact(result.stdout + result.stderr));
-  });
+    await writeFile(join(runDir, `${name}.log`), redact(result.stdout + result.stderr));
+  }
+  if (gateway) await scenario('plugin-login', () => pluginScript('plugin-login', 'obsidian-user'));
+  if (gateway) await scenario('send-to-kindle', () => pluginScript('send-to-kindle', 'kindle-user'));
   await scenario('desktop-obsidian', async () => {
     if (gateway) { await runGatewayDesktop(false); return; }
     const app = join(root, 'apps/obsidian');
@@ -451,6 +459,7 @@ try {
     for (const child of processes) await stop(child);
     if (proxy) { proxy.closeAllConnections(); proxy.close(); }
     if (gateway) await gateway.close();
+    if (sink) await sink.close();
     await compose('down', '-v');
   } finally {
     await writeFile(join(runDir, 'report.json'), JSON.stringify(report, null, 2));

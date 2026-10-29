@@ -1,14 +1,11 @@
 // Builds sample EPUBs with the plug-in's generator and validates them with EPUBCheck; any error fails.
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildEpub, type EpubImage } from '../../apps/obsidian/src/features/tabularium/epub.ts';
 import { renderNote } from '../../apps/obsidian/src/features/tabularium/render.ts';
+import { epubErrors } from './epubcheck.ts';
 
-const exec = promisify(execFile);
-const epubcheck = resolve(import.meta.dirname, '../../.tools/epubcheck/epubcheck-5.2.1/epubcheck.jar');
 const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
 const note = `---
 tags: [示例]
@@ -46,14 +43,7 @@ sudo apt install nginx && echo "<ok>" > /tmp/x
 async function check(name: string, data: Uint8Array, directory: string) {
   const file = join(directory, `${name}.epub`);
   await writeFile(file, data);
-  await exec('unzip', ['-tq', file]);
-  const report = join(directory, `${name}.json`);
-  await exec('java', ['-jar', epubcheck, file, '--json', report]).catch(() => undefined);
-  const { messages } = JSON.parse(await readFile(report, 'utf8')) as { messages: { severity: string; ID: string; message: string; locations: { path: string }[] }[] };
-  for (const m of messages) console.log(`${m.severity} ${m.ID} ${m.message} (${m.locations.map(l => l.path).join(', ')})`);
-  const errors = messages.filter(m => ['ERROR', 'FATAL'].includes(m.severity));
-  console.log(`${name}: ${errors.length} errors, ${messages.length - errors.length} other messages, ${data.length} bytes`);
-  return errors.length;
+  return epubErrors(file);
 }
 
 const directory = await mkdtemp(join(tmpdir(), 'tabularium-epub-'));
