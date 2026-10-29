@@ -74,6 +74,13 @@ try {
   assert.equal(saved.encrypt, true); assert.equal(saved.usePathObfuscation, true);
   for (const secret of [passphrase, password, initialPassword]) assert(!data.includes(secret), 'secret stored in data.json');
   assert(!/"couchDB_PASSWORD":"[^"]/.test(data), 'device password stored in clear');
+
+  step('credentials close to expiry are renewed on the server and recorded locally');
+  const renewal = await evalObsidianJson<{ renewed: boolean; expiresAt: number }>(obsidianCli, "(async()=>{const t=app.plugins.plugins['tabularium'].tabularium;t.connection={...t.connection,expiresAt:Date.now()};const renewed=await t.renew();return JSON.stringify({renewed,expiresAt:t.connection.expiresAt});})()", session.cliEnv);
+  assert.equal(renewal.renewed, true);
+  assert(renewal.expiresAt > Date.now() + 29 * 86_400_000, 'expiry restarts from now');
+  assert.equal(JSON.parse(await readFile(join(a.path, '.obsidian/plugins/tabularium/tabularium.json'), 'utf8')).expiresAt, renewal.expiresAt);
+  assert.equal((await api(`/vaults/${vault.id}/devices`, 'GET', undefined, token)).find((d: { name: string }) => d.name === 'Obsidian A').expiresAt, renewal.expiresAt);
   await session.app.stop(); session = undefined;
 
   step('device B fetches the existing vault, then disconnects');

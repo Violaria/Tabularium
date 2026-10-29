@@ -121,9 +121,24 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
       return JSON.stringify([Object.entries(localStorage), records]);
     });
     assert(!stored.includes(passphrase), 'passphrase found in browser storage');
+    // Make the stored credentials look close to expiry: the next unlock renews them.
+    await page.evaluate(() => new Promise(done => {
+      const request = indexedDB.open('tabularium-notes');
+      request.onsuccess = () => {
+        const store = request.result.transaction('vaults', 'readwrite').objectStore('vaults');
+        const all = store.getAll();
+        all.onsuccess = () => { for (const record of all.result) store.put({ ...record, expiresAt: Date.now() }); store.transaction.oncomplete = done; };
+      };
+    }));
     await page.reload();
     await unlock(passphrase);
     await expect(page.getByText('本地明文副本')).toBeVisible({ timeout: 60_000 });
+    const renewed = await page.evaluate(() => new Promise(done => {
+      const request = indexedDB.open('tabularium-notes');
+      request.onsuccess = () => { const all = request.result.transaction('vaults').objectStore('vaults').getAll(); all.onsuccess = () => done(all.result[0].expiresAt); };
+    }));
+    assert(renewed > Date.now() + 29 * 86_400_000, 'browser device renewed on unlock');
+    assert.equal((await api(`/vaults/${vault.id}/devices`)).find(d => d.id === browserDevice.id).expiresAt, renewed);
 
     // Multiple selection sends one book per item.
     await page.getByRole('button', { name: '▸ 笔记' }).click();
