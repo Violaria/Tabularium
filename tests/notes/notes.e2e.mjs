@@ -130,9 +130,14 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
         all.onsuccess = () => { for (const record of all.result) store.put({ ...record, expiresAt: Date.now() }); store.transaction.oncomplete = done; };
       };
     }));
-    await page.reload();
-    await unlock(passphrase);
+    // A link from a Tabularius citation goes straight to the vault's unlock form, then opens the note.
+    await page.goto('about:blank');
+    await page.goto(`${url}/notes/#${vault.id}/${encodeURIComponent('笔记')}/${encodeURIComponent('中文.md')}`);
+    await page.getByLabel('口令').fill(passphrase);
+    await page.getByRole('button', { name: '解锁' }).click();
     await expect(page.getByText('本地明文副本')).toBeVisible({ timeout: 60_000 });
+    await expect(article.getByRole('heading', { name: '中文笔记' })).toBeVisible();
+    assert.equal(new URL(page.url()).hash, '');
     const renewed = await page.evaluate(() => new Promise(done => {
       const request = indexedDB.open('tabularium-notes');
       request.onsuccess = () => { const all = request.result.transaction('vaults').objectStore('vaults').getAll(); all.onsuccess = () => done(all.result[0].expiresAt); };

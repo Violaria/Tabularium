@@ -13,3 +13,5 @@
 !apps/server/ui/**
 !apps/server/notes-dist
 !apps/server/notes-dist/**
+!apps/server/cli-dist
+!apps/server/cli-dist/**
