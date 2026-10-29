@@ -63,7 +63,7 @@ try {
     }
     const result = await evalObsidianJson<{ content: string }>(process.env.OBSIDIAN_CLI!, [
       '(async()=>{',
-      "const core=app.plugins.plugins['obsidian-livesync'].core;",
+      "const core=app.plugins.plugins['tabularium'].core;",
       standard ? "const deadline=Date.now()+30000; while(!await app.vault.adapter.exists('notes/快取.md') && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));" : 'await core.serviceModules.rebuilder.$fetchLocalDBFast(true);',
       "return JSON.stringify({content:await app.vault.adapter.read('notes/快取.md')});",
       '})()',

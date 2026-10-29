@@ -29,8 +29,8 @@ try {
   const evaluate = <T>(code: string) => evalObsidianJson<T>(cli, `(async()=>{${code}})()`, session!.cliEnv, 45_000);
   await evaluate(`
     const deadline=Date.now()+30000;
-    while(!app.plugins.plugins['obsidian-livesync']?.sorting?.ready && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
-    const plugin=app.plugins.plugins['obsidian-livesync'];
+    while(!app.plugins.plugins['tabularium']?.sorting?.ready && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
+    const plugin=app.plugins.plugins['tabularium'];
     if(!plugin?.sorting?.ready) throw new Error('Sorting component did not start');
     globalThis.sortTestView=app.workspace.getLeavesOfType('file-explorer')[0].view;
     globalThis.sortTestOriginal=globalThis.sortTestView.getSortedFolderItems;
@@ -46,7 +46,7 @@ try {
   const settingsPath = join(vault.path, '.obsidian/plugins/obsidian-livesync');
   const initialSyncSettings = await readFile(join(settingsPath, 'data.json'), 'utf8');
   await evaluate(`
-    const sorting=app.plugins.plugins['obsidian-livesync'].sorting;
+    const sorting=app.plugins.plugins['tabularium'].sorting;
     sorting.openSettings();
     if(!document.querySelector('.tabularium-sorting-settings')) throw new Error('Settings dialogue missing');
     sorting.settings.additionalSortspecFile='custom-rules';
@@ -59,7 +59,7 @@ try {
   assert.equal('additionalSortspecFile' in syncSettings, false);
   report.scenarios.push('settings-dialogue-and-isolated-persistence');
   const paused = await evaluate<string[]>(`
-    app.plugins.plugins['obsidian-livesync'].sorting.switchPluginStateTo(false);
+    app.plugins.plugins['tabularium'].sorting.switchPluginStateTo(false);
     return JSON.stringify(globalThis.sortTestNames('Notes'));
   `);
   assert.deepEqual(paused.filter(name => name !== 'sortspec.md'), ['Alpha.md', 'Beta.md', 'Zeta.md']);
@@ -69,7 +69,7 @@ try {
     await app.vault.modify(file,${JSON.stringify('---\nsorting-spec: |\n  order-asc: invalid-order\n---\n')});
     const deadline=Date.now()+10000;
     while(!app.metadataCache.getFileCache(file)?.frontmatter?.['sorting-spec']?.includes('invalid-order') && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
-    const sorting=app.plugins.plugins['obsidian-livesync'].sorting;
+    const sorting=app.plugins.plugins['tabularium'].sorting;
     sorting.switchPluginStateTo(true);
     if(!sorting.settings.suspended) throw new Error('Invalid spec did not suspend sorting');
     await app.vault.modify(file,${JSON.stringify(spec)});
@@ -81,8 +81,8 @@ try {
     if(globalThis.sortTestView.getSortedFolderItems!==globalThis.sortTestOriginal) throw new Error('File explorer patch retained after unload');
     await app.plugins.enablePlugin('obsidian-livesync');
     const deadline=Date.now()+30000;
-    while(!app.plugins.plugins['obsidian-livesync']?.sorting?.ready && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
-    const sorting=app.plugins.plugins['obsidian-livesync'].sorting;
+    while(!app.plugins.plugins['tabularium']?.sorting?.ready && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
+    const sorting=app.plugins.plugins['tabularium'].sorting;
     if(sorting.settings.additionalSortspecFile!=='custom-rules') throw new Error('Sorting settings were not restored');
     sorting.switchPluginStateTo(true);
     return JSON.stringify(true);
@@ -93,7 +93,7 @@ try {
     await app.plugins.disablePlugin('obsidian-livesync');
     app.plugins.enabledPlugins.add('custom-sort');
     await app.plugins.enablePlugin('obsidian-livesync');
-    if(app.plugins.plugins['obsidian-livesync'].sorting) throw new Error('Both sorting components enabled');
+    if(app.plugins.plugins['tabularium'].sorting) throw new Error('Both sorting components enabled');
     app.plugins.enabledPlugins.delete('custom-sort');
     return JSON.stringify(true);
   `);
