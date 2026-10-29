@@ -55,8 +55,8 @@ try {
     images.push({ href, mediaType: 'image/png', data: png });
     return href;
   };
-  const base = { language: 'zh', modified: new Date() };
-  const single = renderNote(note, resolveImage);
+  const base = { language: 'zh', contentsTitle: '目录', modified: new Date() };
+  const single = renderNote(note, resolveImage, name => `[图片：${name}]`);
   let errors = await check('single', buildEpub({ ...base, title: '示例笔记', identifier: 'urn:uuid:3f2504e0-4f89-41d3-9a0c-0305e82c3301', images: [...images],
     chapters: [{ title: '示例笔记', ...single }] }), directory);
   images.length = 0;
@@ -65,7 +65,7 @@ try {
     { title: '部署笔记', group: '服务运维' },
     { title: '故障排查', group: '服务运维' },
     { title: '组网设计', group: '网络工程' },
-  ].map(c => ({ ...c, ...renderNote(note, resolveImage) }));
+  ].map(c => ({ ...c, ...renderNote(note, resolveImage, name => `[图片：${name}]`) }));
   errors += await check('folder', buildEpub({ ...base, title: 'Commentarii', identifier: 'urn:uuid:3f2504e0-4f89-41d3-9a0c-0305e82c3302', images, chapters }), directory);
   if (errors) process.exitCode = 1;
   else console.log('EPUBCheck passed for both books.');

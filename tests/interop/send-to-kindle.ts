@@ -71,10 +71,21 @@ try {
 
   step('a multiple selection from the file explorer menu sends one book per item');
   // A stand-in menu records the items plug-ins add; any other menu call is accepted and ignored.
-  const title = await plugin(session, "const files=['散篇/甲.md','书单/子'].map(p=>app.vault.getAbstractFileByPath(p));const items=[];const chain=(t)=>new Proxy(t,{get:(o,k)=>k in o?o[k]:()=>chain(o)});const menu=chain({addItem(cb){const i=chain({setTitle(t){i.title=t;return i},onClick(f){i.click=f;return i}});cb(i);items.push(i);return menu}});app.workspace.trigger('files-menu',menu,files,'file-explorer');const item=items.find(i=>typeof i.title==='string'&&i.title.startsWith('发送'));item.click();return JSON.stringify(item.title);");
-  assert.equal(title, '发送 2 项到 Kindle');
+  const menu = (click: boolean) => `const files=['散篇/甲.md','书单/子'].map(p=>app.vault.getAbstractFileByPath(p));const items=[];const chain=(t)=>new Proxy(t,{get:(o,k)=>k in o?o[k]:()=>chain(o)});const menu=chain({addItem(cb){const i=chain({setTitle(t){i.title=t;return i},setIcon(n){i.icon=n;return i},onClick(f){i.click=f;return i}});cb(i);items.push(i);return menu}});app.workspace.trigger('files-menu',menu,files,'file-explorer');const item=items.find(i=>i.icon==='send');${click ? 'item.click();' : ''}return JSON.stringify(item.title);`;
+  const menuTitle = menu(false);
+  const title = await plugin(session, menu(true));
+  assert.equal(title, 'Send 2 items to Kindle');
   assert((await received(before + 3, '甲.epub')).includes('甲篇'));
   assert((await received(before + 4, '子.epub')).includes('第二篇正文'));
+
+  step('the display language switches the menu to Latin');
+  const latin = JSON.parse(await readFile(new URL('../../apps/obsidian/src/common/messagesJson/la.json', import.meta.url), 'utf8'))['tabularium.kindle.sendItems'].replace('${count}', '2');
+  await plugin(session, "await p.core.services.setting.applyPartial({displayLanguage:'la'},true);return JSON.stringify(true);");
+  const latinTitle = await until(async () => {
+    const shown = await plugin(session, menuTitle);
+    return shown === latin ? shown : undefined;
+  }, 30_000);
+  assert.equal(latinTitle, latin);
 
   const deliveries = await api('/me/kindle/deliveries', 'GET', undefined, token);
   assert.deepEqual(deliveries.map((d: { fileName: string; status: string }) => `${d.fileName} ${d.status}`), ['子.epub sent', '甲.epub sent', '书单.epub sent', '第一篇.epub sent']);

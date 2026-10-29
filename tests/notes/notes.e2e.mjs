@@ -68,7 +68,7 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     await cli('mirror', client.vault); await cli('sync');
 
     browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
     const page = await context.newPage();
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     if (process.env.NOTES_DEBUG) { page.on('console', m => console.log('console:', m.type(), m.text().slice(0, 300))); page.on('response', r => console.log('http', r.status(), r.request().method(), r.url().slice(0, 150))); page.on('requestfailed', r => console.log('failed', r.url().slice(0, 150), r.failure()?.errorText)); }
