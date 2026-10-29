@@ -31,7 +31,7 @@
     "rehearse:migration": "node tests/release/migration-rehearsal.mjs",
     "test:backup": "npm run build:notes && node --test --test-concurrency=1 tests/backup/*.test.mjs",
     "test:backup:clients": "npm run build:notes && node tests/backup/clients.mjs",
-    "test:notes:browser": "npm run build:server && node --test tests/notes/notes.e2e.mjs",
+    "test:notes:browser": "npm run build:server && node --test --test-concurrency=1 tests/notes/*.e2e.mjs",
     "test:server:browser": "npm run build:notes && npm run test:browser --workspace @tabularium/server"
   },
   "workspaces": [
