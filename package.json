@@ -1,6 +1,6 @@
 {
   "name": "tabularium",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
   "type": "module",
   "engines": {
@@ -14,9 +14,10 @@
     "build": "npm run build:sorting && npm run build:server && npm run build --prefix apps/obsidian && npm run build --prefix apps/obsidian --workspace self-hosted-livesync-cli",
     "test:unit": "npm run test:unit --prefix apps/obsidian",
     "test:baseline": "node tests/interop/baseline.mjs",
-    "build:server": "npm run build --workspace @tabularium/server",
+    "build:server": "npm run build:notes && npm run build --workspace @tabularium/server",
+    "build:notes": "npm run build:notes --prefix apps/obsidian",
     "check:server": "npm run check --workspace @tabularium/server",
-    "test:server": "npm test --workspace @tabularium/server",
+    "test:server": "npm run build:notes && npm test --workspace @tabularium/server",
     "start:server": "npm start --workspace @tabularium/server",
     "test:gateway": "npm run build:server && node tests/interop/baseline.mjs --gateway",
     "build:sorting": "npm run build --workspace @tabularium/custom-sort",
@@ -25,12 +26,13 @@
     "check:backup": "tsc -p deploy/backup",
     "check:release": "tsc -p deploy/release",
     "release": "node deploy/release/build.ts",
-    "test:release": "node tests/release/clean-install.mjs",
+    "test:release": "npm run build:notes && node tests/release/clean-install.mjs",
     "test:epub": "cd apps/obsidian && node node_modules/tsx/dist/cli.mjs --tsconfig tsconfig.json ../../tests/kindle/epub-check.ts",
     "rehearse:migration": "node tests/release/migration-rehearsal.mjs",
-    "test:backup": "node --test --test-concurrency=1 tests/backup/*.test.mjs",
-    "test:backup:clients": "node tests/backup/clients.mjs",
-    "test:server:browser": "npm run test:browser --workspace @tabularium/server"
+    "test:backup": "npm run build:notes && node --test --test-concurrency=1 tests/backup/*.test.mjs",
+    "test:backup:clients": "npm run build:notes && node tests/backup/clients.mjs",
+    "test:notes:browser": "npm run build:server && node --test tests/notes/notes.e2e.mjs",
+    "test:server:browser": "npm run build:notes && npm run test:browser --workspace @tabularium/server"
   },
   "workspaces": [
     "apps/server",

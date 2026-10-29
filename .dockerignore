@@ -11,3 +11,5 @@
 !apps/server/build-ui.mjs
 !apps/server/ui
 !apps/server/ui/**
+!apps/server/notes-dist
+!apps/server/notes-dist/**

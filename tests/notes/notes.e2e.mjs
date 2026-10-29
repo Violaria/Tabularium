@@ -1,0 +1,164 @@
+// The web notes page in real Chromium against a real CouchDB and gateway. A CLI client writes encrypted notes;
+// the page logs in, unlocks in the browser, browses, receives live changes, sends to Kindle and clears its data.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { chromium, expect } from '@playwright/test';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { createGateway } from '../../apps/server/dist/server.js';
+import { startSmtpSink, parseMessage } from '../../apps/server/test/smtp-sink.mjs';
+import { epubErrors } from '../kindle/epubcheck.ts';
+
+const exec = promisify(execFile);
+const root = resolve(import.meta.dirname, '../..');
+const cliPath = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+
+test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
+  const runId = `notes-${Date.now()}`;
+  const temp = await mkdtemp(join(tmpdir(), 'tabularium-notes-'));
+  const password = randomBytes(24).toString('hex');
+  const passphrase = randomBytes(16).toString('hex');
+  const compose = (...args) => exec('docker', ['compose', '-f', join(root, 'deploy/test/compose.yaml'), '-p', runId, ...args], {
+    env: { ...process.env, BASELINE_PASSWORD: password }, timeout: 90_000,
+  });
+  let gateway, browser, sink;
+  try {
+    await compose('up', '-d', '--wait');
+    const port = (await compose('port', 'couchdb', '5984')).stdout.trim();
+    sink = await startSmtpSink();
+    gateway = await createGateway({ database: join(temp, 'app.sqlite'), bootstrapUser: 'admin', bootstrapPassword: password, origins: [],
+      smtp: { host: '127.0.0.1', port: sink.port, security: 'none', user: sink.user, password: sink.password, from: 'tabularium@example.test' },
+      couch: { url: `http://${port}`, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword: randomBytes(24).toString('hex') } });
+    const url = await gateway.listen();
+    let token;
+    const api = async (path, method = 'GET', body) => {
+      const response = await fetch(`${url}/api/v1${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body),
+        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) } });
+      assert(response.ok, `${method} ${path}: ${response.status}`);
+      return response.json();
+    };
+    token = (await api('/sessions', 'POST', { username: 'admin', password })).token;
+    const userPassword = randomBytes(12).toString('hex');
+    await api('/me/password', 'PUT', { currentPassword: password, password: userPassword });
+    token = (await api('/sessions', 'POST', { username: 'admin', password: userPassword })).token;
+    const vault = await api('/vaults', 'POST', { name: '网页库' });
+    await api('/me/kindle', 'PUT', { address: 'reader@kindle.com' });
+
+    // A CLI device writes the encrypted notes.
+    const device = await api(`/vaults/${vault.id}/devices`, 'POST', { name: 'cli' });
+    const client = { db: join(temp, 'db'), vault: join(temp, 'vault'), settings: join(temp, 'settings.json') };
+    const notes = {
+      '笔记/中文.md': '# 中文笔记\n\n正文见 [[图示|看图]]。\n\n![[图.png]]\n\n<script>window.__xss = 1</script>\n<img src="x" onerror="window.__xss = 2">\n\n![远程](https://example.com/a.png)\n',
+      '笔记/子/图示.md': '图示正文。\n',
+      'assets/图.png': png,
+      'readme.md': '第一版\n',
+    };
+    await mkdir(client.db, { recursive: true });
+    for (const [path, content] of Object.entries(notes)) { await mkdir(join(client.vault, path, '..'), { recursive: true }); await writeFile(join(client.vault, path), content); }
+    await exec(process.execPath, [cliPath, 'init-settings', client.settings]);
+    await writeFile(client.settings, JSON.stringify({ ...JSON.parse(await readFile(client.settings, 'utf8')),
+      couchDB_URI: `${url}/sync`, couchDB_DBNAME: vault.id, couchDB_USER: device.username, couchDB_PASSWORD: device.password,
+      isConfigured: true, encrypt: true, passphrase, E2EEAlgorithm: 'v2', usePathObfuscation: true, liveSync: false, syncOnStart: false, syncOnSave: false, usePluginSync: false }));
+    const cli = (...args) => exec(process.execPath, [cliPath, client.db, '--settings', client.settings, '--vault', client.vault, ...args], { cwd: root, timeout: 90_000 });
+    await cli('mirror', client.vault); await cli('sync');
+
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    if (process.env.NOTES_DEBUG) { page.on('console', m => console.log('console:', m.type(), m.text().slice(0, 300))); page.on('response', r => console.log('http', r.status(), r.request().method(), r.url().slice(0, 150))); page.on('requestfailed', r => console.log('failed', r.url().slice(0, 150), r.failure()?.errorText)); }
+    page.on('dialog', dialog => dialog.accept());
+    const unlock = async secret => {
+      await page.getByRole('button', { name: '网页库' }).click();
+      await page.getByLabel('口令').fill(secret);
+      await page.getByRole('button', { name: '解锁' }).click();
+    };
+
+    // Login with the console account, a wrong passphrase, then the right one.
+    await page.goto(`${url}/notes/`);
+    await page.getByLabel('用户名').fill('admin');
+    await page.getByLabel('密码').fill(userPassword);
+    await page.getByRole('button', { name: '登录' }).click();
+    await unlock('wrong-passphrase');
+    await expect(page.getByText('口令错误。')).toBeVisible({ timeout: 60_000 });
+    await page.getByLabel('口令').fill(passphrase);
+    await page.getByRole('button', { name: '解锁' }).click();
+    await expect(page.getByText('本地明文副本')).toBeVisible({ timeout: 120_000 });
+    const devices = await api(`/vaults/${vault.id}/devices`);
+    const browserDevice = devices.find(d => d.name.startsWith('网页 · Chrome'));
+    assert(browserDevice, 'the browser is registered as a device');
+
+    // Tree, preview, image from the local replica, escaped HTML and in-page links.
+    await page.getByRole('button', { name: '▸ 笔记' }).click();
+    await page.getByRole('button', { name: '中文', exact: true }).click();
+    const article = page.locator('article');
+    await expect(article.getByRole('heading', { name: '中文笔记' })).toBeVisible();
+    await expect(article).toContainText('<script>window.__xss = 1</script>');
+    await expect(article.locator('a.remote-image')).toHaveText('[远程图片：远程]');
+    await expect.poll(() => article.locator('img').evaluate(img => img.naturalWidth)).toBe(1);
+    assert.equal(await page.evaluate(() => window.__xss), undefined);
+    await article.getByRole('link', { name: '看图' }).click();
+    await expect(article).toContainText('图示正文。');
+
+    // A change from another device arrives while the page is open.
+    await page.getByRole('button', { name: 'readme', exact: true }).click();
+    await expect(article).toContainText('第一版');
+    await writeFile(join(client.vault, 'readme.md'), '第二版\n');
+    await cli('mirror', client.vault); await cli('sync');
+    await expect(article).toContainText('第二版', { timeout: 60_000 });
+
+    // The passphrase is in no browser storage; after a reload it is asked again.
+    const stored = await page.evaluate(async () => {
+      const records = await new Promise(done => {
+        const request = indexedDB.open('tabularium-notes');
+        request.onsuccess = () => { const all = request.result.transaction('vaults').objectStore('vaults').getAll(); all.onsuccess = () => done(all.result); };
+      });
+      return JSON.stringify([Object.entries(localStorage), records]);
+    });
+    assert(!stored.includes(passphrase), 'passphrase found in browser storage');
+    await page.reload();
+    await unlock(passphrase);
+    await expect(page.getByText('本地明文副本')).toBeVisible({ timeout: 60_000 });
+
+    // Multiple selection sends one book per item.
+    await page.getByRole('button', { name: '▸ 笔记' }).click();
+    await page.getByRole('button', { name: '▸ 子' }).click();
+    await page.locator('.row', { has: page.getByRole('button', { name: '中文', exact: true }) }).getByRole('button', { name: '更多操作' }).click();
+    await page.getByRole('menuitem', { name: '多选…' }).click();
+    await page.getByLabel('选择 子').check();
+    await page.getByRole('button', { name: '推送 2 项至 Kindle' }).click();
+    await expect(page.getByText('已推送至 Kindle：《中文》、《子》')).toBeVisible({ timeout: 60_000 });
+    assert.deepEqual(sink.messages.map(message => parseMessage(message.raw).fileName), ['中文.epub', '子.epub']);
+    for (const [index, message] of sink.messages.entries()) {
+      const file = join(temp, `${index}.epub`);
+      await writeFile(file, parseMessage(message.raw).data);
+      assert.equal(await epubErrors(file), 0);
+    }
+    assert(parseMessage(sink.messages[0].raw).data.includes(png), 'image packed into the web-built book');
+
+    // Clearing removes the local replica and revokes the browser's device.
+    await page.getByRole('button', { name: '清除本地数据' }).click();
+    await expect(page.getByText('本地数据已清除，设备已撤销。')).toBeVisible({ timeout: 30_000 });
+    const left = await page.evaluate(async id => {
+      const names = (await indexedDB.databases()).map(d => d.name).filter(name => name.includes(id));
+      const users = await (await navigator.storage.getDirectory()).getDirectoryHandle('tabularium');
+      const vaults = [];
+      for await (const [, user] of users.entries()) for await (const [name] of user.entries()) vaults.push(name);
+      return { names, vaults, local: Object.keys(localStorage).filter(key => key.includes(id)) };
+    }, vault.id);
+    assert.deepEqual(left, { names: [], vaults: [], local: [] });
+    assert.equal((await api(`/vaults/${vault.id}/devices`)).find(d => d.id === browserDevice.id).revoked, 1);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser?.close();
+    await gateway?.close();
+    await sink?.close();
+    await compose('down', '-v').catch(() => {});
+    await rm(temp, { recursive: true, force: true });
+  }
+});

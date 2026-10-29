@@ -7,6 +7,7 @@ reference/
 !apps/obsidian/package-lock.json
 test-runs/
 apps/server/dist/
+apps/server/notes-dist/
 apps/server/data/
 packages/custom-sort/dist/
 .claude/settings.local.json

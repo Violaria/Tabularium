@@ -59,13 +59,13 @@ try {
   assert.deepEqual(await plugin(session, 'return JSON.stringify(await p.kindle.status());'), { configured: true, address: 'reader@kindle.com', dailyLimit: 30, remaining: 30 });
 
   step('a single note with an embedded image');
-  await plugin(session, "const f=app.vault.getAbstractFileByPath('书单/第一篇.md');return JSON.stringify(await p.kindle.send([f],f.basename));");
+  await plugin(session, "return JSON.stringify(await p.kindle.send(['书单/第一篇.md'],'第一篇'));");
   const single = await received(before + 1, '第一篇.epub');
   assert(single.includes('OEBPS/images/image-1.png') && single.includes(png), 'image packed into the book');
   assert(single.includes('href="chapter-1.xhtml#h-1"'), 'note headings listed in the table of contents');
 
   step('a folder with a sub-folder');
-  await plugin(session, "const f=app.vault.getAbstractFileByPath('书单');return JSON.stringify(await p.kindle.send(p.kindle.notes(f),f.name,f.path));");
+  await plugin(session, "const b=p.kindle.book(app.vault.getAbstractFileByPath('书单'));return JSON.stringify(await p.kindle.send(b.notes,b.title,b.folder));");
   const folder = await received(before + 2, '书单.epub');
   assert(folder.includes('第二篇正文') && folder.includes('OEBPS/part-1.xhtml'), 'sub-folder notes grouped under a part page');
 
