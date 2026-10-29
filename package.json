@@ -1,0 +1,35 @@
+{
+  "name": "tabularium",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.10.0",
+    "npm": "11.6.1"
+  },
+  "packageManager": "npm@11.6.1",
+  "scripts": {
+    "bootstrap": "npm ci && npm run build:sorting && npm ci --prefix apps/obsidian",
+    "check": "npm run build:sorting && npm run check:server && node --check tests/interop/gateway-baseline.mjs && node --check tests/interop/baseline.mjs && node apps/obsidian/node_modules/typescript/bin/tsc -p tests/interop/tsconfig.json && npm run check --prefix apps/obsidian",
+    "build": "npm run build:sorting && npm run build:server && npm run build --prefix apps/obsidian && npm run build --prefix apps/obsidian --workspace self-hosted-livesync-cli",
+    "test:unit": "npm run test:unit --prefix apps/obsidian",
+    "test:baseline": "node tests/interop/baseline.mjs",
+    "build:server": "npm run build --workspace @tabularium/server",
+    "check:server": "npm run check --workspace @tabularium/server",
+    "test:server": "npm test --workspace @tabularium/server",
+    "start:server": "npm start --workspace @tabularium/server",
+    "test:gateway": "npm run build:server && node tests/interop/baseline.mjs --gateway",
+    "build:sorting": "npm run build --workspace @tabularium/custom-sort",
+    "test:sorting": "npm test --workspace @tabularium/custom-sort",
+    "test:sorting:obsidian": "npm run build:sorting && npm run build --prefix apps/obsidian && npm run test:tabularium:sorting --prefix apps/obsidian",
+    "test:server:browser": "npm run test:browser --workspace @tabularium/server"
+  },
+  "workspaces": [
+    "apps/server",
+    "packages/custom-sort"
+  ],
+  "devDependencies": {
+    "@types/node": "24.10.0",
+    "typescript": "5.9.3"
+  }
+}

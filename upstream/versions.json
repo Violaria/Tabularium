@@ -1,0 +1,77 @@
+{
+  "sources": [
+    {
+      "repository": "https://github.com/vrtmrz/obsidian-livesync",
+      "commit": "935511c69b111f11b6a52c8daa79b2883f9233dc",
+      "version": "1.0.40",
+      "commonlib": "0.2.1",
+      "role": "plugin",
+      "lockSha256": "9dc26a04179600d04baad5187c725621dcd945ce663439ddd2d770f9d231e053",
+      "license": "MIT"
+    },
+    {
+      "repository": "https://github.com/vrtmrz/livesync-commonlib",
+      "commit": "aa54282937c20d3db7f43778d240feeb1586cced",
+      "version": "0.2.0",
+      "commonlib": "0.2.0",
+      "role": "legacy-protocol",
+      "lockSha256": "06dd8dd174071afcc661b6c260f6b461753ee2118d865e2b95ac40ddda8bca87",
+      "license": "MIT"
+    },
+    {
+      "repository": "https://github.com/vrtmrz/livesync-commonlib",
+      "commit": "029a36fdeaf193cac0cf87f6245ccdf7e149f547",
+      "version": "0.2.1",
+      "commonlib": "0.2.1",
+      "role": "plugin-dependency",
+      "lockSha256": "30291cdce7712caa9816cac55f0b6ac6c3da41447fad485a07745268a89cf0d6",
+      "license": "MIT"
+    },
+    {
+      "repository": "https://github.com/vrtmrz/livesync-commonlib",
+      "commit": "3e1a5e1dfd7d8da14009b66c7a3b8155986f92cb",
+      "version": "0.2.2",
+      "commonlib": "0.2.2",
+      "role": "reference",
+      "lockSha256": "ff44a980a2b1cdaf66ba8654c3327c18478024c1248c320f14519ced2f54a0c9",
+      "license": "MIT"
+    },
+    {
+      "repository": "https://github.com/vrtmrz/obsidian-livesync",
+      "commit": "73a14d4e4b0b414a1acfe170d01500abb3dca2e9",
+      "version": "1.0.40",
+      "commonlib": "0.2.0",
+      "role": "legacy-client",
+      "lockSha256": "bf79fcfea9d694a42cff7086cd0aedd17248a55792cc01311ed63efc42644fb9",
+      "license": "MIT"
+    },
+    {
+      "repository": "https://github.com/SebastianMC/obsidian-custom-sort",
+      "commit": "6100b0c664988b08460c0b7312f77d98770fe3fa",
+      "version": "3.2.0",
+      "role": "file-sorting",
+      "author": "SebastianMC",
+      "licenseStatus": "inconsistent upstream declarations: package.json MIT; LICENSE.md GPL-3.0; LICENSE Dynalist permission notice",
+      "licenseFiles": {
+        "LICENSE": "58340ddba3343608dc4835d119861ef8d35f9af8dede9b83dc4c4bdebc4a329c",
+        "LICENSE.md": "6a5e2097e1347f38b94e92707d21921eae3acf140a2082fb3e92a0d69fc59452"
+      }
+    }
+  ],
+  "toolchain": {
+    "node": "24.10.0",
+    "npm": "11.6.1",
+    "deno": "2.5.4"
+  },
+  "runtimes": {
+    "couchdb": {
+      "version": "3.5.3",
+      "image": "couchdb:3.5.3@sha256:bed314d10cdf58c0fff63352db4c3f168df58a185a773c0e2295105375c5ef10"
+    },
+    "obsidian": {
+      "version": "1.12.7",
+      "url": "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.12.7/Obsidian-1.12.7.AppImage",
+      "sha256": "f6d8b96fe685a8632c819cc093a248ace0f6bab410f44a6c929a2611b1ebb17c"
+    }
+  }
+}

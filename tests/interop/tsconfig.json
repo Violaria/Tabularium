@@ -1,0 +1,16 @@
+{
+  "extends": "../../apps/obsidian/tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ],
+    "typeRoots": [
+      "../../apps/obsidian/node_modules/@types"
+    ]
+  },
+  "include": [
+    "fast-fetch.ts",
+    "custom-sorting.ts"
+  ],
+  "exclude": []
+}

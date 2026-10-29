@@ -1,0 +1,52 @@
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    environment:
+      TABULARIUM_ADMIN_USER: ${TABULARIUM_ADMIN_USER:-admin}
+      TABULARIUM_ADMIN_PASSWORD: ${TABULARIUM_ADMIN_PASSWORD:?Set initial administrator password}
+      TABULARIUM_PUBLIC_URL: ${TABULARIUM_PUBLIC_URL:-}
+      TABULARIUM_ORIGINS: ${TABULARIUM_ORIGINS:-app://obsidian.md,capacitor://localhost,http://localhost}
+      COUCHDB_URL: http://couchdb:5984
+      COUCHDB_ADMIN_USER: admin
+      COUCHDB_ADMIN_PASSWORD: ${COUCHDB_ADMIN_PASSWORD:?Set CouchDB administrator password}
+      COUCHDB_SYNC_USER: tabularium
+      COUCHDB_SYNC_PASSWORD: ${COUCHDB_SYNC_PASSWORD:?Set CouchDB service password}
+    ports:
+      - "127.0.0.1:${TABULARIUM_PORT:-3000}:3000"
+    volumes:
+      - application:/data
+    networks: [edge, database]
+    depends_on:
+      couchdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+  couchdb:
+    image: couchdb:3.5.3@sha256:bed314d10cdf58c0fff63352db4c3f168df58a185a773c0e2295105375c5ef10
+    user: "5984:5984"
+    environment:
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: ${COUCHDB_ADMIN_PASSWORD:?Set CouchDB administrator password}
+    volumes:
+      - notes:/opt/couchdb/data
+      - ./couchdb.ini:/opt/couchdb/etc/local.d/tabularium.ini:ro
+    networks: [database]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:5984/_up"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+networks:
+  edge:
+  database:
+    internal: true
+volumes:
+  application:
+  notes:

@@ -1,0 +1,13 @@
+**
+!package.json
+!package-lock.json
+!apps
+!apps/server
+!apps/server/package.json
+!apps/server/tsconfig.json
+!apps/server/src
+!apps/server/src/**
+!apps/server/tsconfig.ui.json
+!apps/server/build-ui.mjs
+!apps/server/ui
+!apps/server/ui/**

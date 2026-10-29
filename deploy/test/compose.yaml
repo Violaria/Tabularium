@@ -1,0 +1,19 @@
+services:
+  couchdb:
+    user: "5984:5984"
+    image: couchdb:3.5.3@sha256:bed314d10cdf58c0fff63352db4c3f168df58a185a773c0e2295105375c5ef10
+    environment:
+      COUCHDB_USER: baseline
+      COUCHDB_PASSWORD: ${BASELINE_PASSWORD:?Set BASELINE_PASSWORD}
+    ports:
+      - "127.0.0.1::5984"
+    volumes:
+      - data:/opt/couchdb/data
+      - ./local.ini:/opt/couchdb/etc/local.d/tabularium.ini:ro
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:5984/_up"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+volumes:
+  data:

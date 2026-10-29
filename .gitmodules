@@ -1,0 +1,6 @@
+[submodule "apps/server"]
+	path = apps/server
+	url = ../Tabularium-Server.git
+[submodule "apps/obsidian"]
+	path = apps/obsidian
+	url = ../Tabularium-Obsidian.git

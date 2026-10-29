@@ -1,0 +1,12 @@
+node_modules/
+.tools/
+.test-runs/
+.env
+*.log
+reference/
+!apps/obsidian/package-lock.json
+test-runs/
+apps/server/dist/
+apps/server/data/
+packages/custom-sort/dist/
+.claude/settings.local.json
