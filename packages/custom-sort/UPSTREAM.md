@@ -9,6 +9,6 @@ The upstream runtime source and tests are preserved. Tabularium adds a package e
 
 ## Licence records
 
-The upstream `package.json` declares MIT, but `LICENSE.md` contains GPL v3, added by SebastianMC in commit `526c0637c0bda4e688469561b7fd418b0350a8b2` ('Added GPL v3 license in LICENSE.md'). The separate `LICENSE` contains a Dynalist copyright and permission notice inherited from the sample plug-in. Both files are retained without modification. These inconsistent declarations have not been resolved; this package does not assert a new MIT licence for the copied source. Distribution licensing needs to be clarified before release.
+The upstream `package.json` declares MIT, but `LICENSE.md` contains GPL v3, added by SebastianMC in commit `526c0637c0bda4e688469561b7fd418b0350a8b2` ('Added GPL v3 license in LICENSE.md'). The separate `LICENSE` contains a Dynalist copyright and permission notice inherited from the sample plug-in. Both files are retained without modification as upstream records. On 2026-10-29 the project owner (Nanako) decided to follow the MIT declaration in the upstream `package.json`; this package and its distribution in the Tabularium plug-in are licensed under MIT on that basis.
 
 The original `yarn.lock` is retained as a source record; this local package uses the root npm lockfile. Reference repositories are not build dependencies.
