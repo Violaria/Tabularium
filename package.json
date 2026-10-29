@@ -26,6 +26,7 @@
     "check:release": "tsc -p deploy/release",
     "release": "node deploy/release/build.ts",
     "test:release": "node tests/release/clean-install.mjs",
+    "test:epub": "cd apps/obsidian && node node_modules/tsx/dist/cli.mjs --tsconfig tsconfig.json ../../tests/kindle/epub-check.ts",
     "rehearse:migration": "node tests/release/migration-rehearsal.mjs",
     "test:backup": "node --test --test-concurrency=1 tests/backup/*.test.mjs",
     "test:backup:clients": "node tests/backup/clients.mjs",
