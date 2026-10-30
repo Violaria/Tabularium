@@ -12,6 +12,7 @@ import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import { createGateway } from '../../apps/server/dist/server.js';
 import { anthropic, embedder, openai } from '../../apps/server/dist/tabularius/providers.js';
+import { ragflow } from '../../apps/server/dist/tabularius/knowledge.js';
 import { startMockProviders } from './mock-providers.mjs';
 
 const exec = promisify(execFile);
@@ -43,10 +44,11 @@ test('Tabularius', { timeout: 900_000 }, async () => {
   const key = randomBytes(32);
   let gateway, browser, couchUrl;
   const syncPassword = randomBytes(24).toString('hex');
-  const start = async provider => {
+  const start = async (provider, embeddingModel = 'test-embed') => {
     gateway = await createGateway({ database, bootstrapUser: 'admin', bootstrapPassword: password, origins: [],
       couch: { url: couchUrl, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword },
-      tabularius: { key, root: join(temp, 'tabularius'), cli: cliPath, provider, embedder: embedder('test-embed', `${mock.url}/v1`, 'test-embed-key') } });
+      tabularius: { key, root: join(temp, 'tabularius'), cli: cliPath, provider,
+        embedder: embedder(embeddingModel, `${mock.url}/v1`, 'test-embed-key', 4), knowledge: ragflow(`${mock.url}/mcp`, ['ds-ops', 'ds-notes']) } });
     return gateway.listen();
   };
   try {
@@ -240,11 +242,44 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert(!listing.some(([path]) => path === '运维/紫藤服务器.md'));
     assert(!await exists(join(hosted, '运维/紫藤服务器.md')));
 
+    // The local knowledge base: only an administrator switches it on; datasets are fixed by the server; results are masked and filtered.
+    mock.knowledge.push(
+      { key: '银杏', content: '服务运维 / 银杏节点\n\n银杏节点的 token: kbsecret123', document_name: '运维/服务器/紫藤.md', dataset_name: '运维笔记', similarity: 0.91 },
+      { key: '银杏', content: '银杏节点的备用说明', document_name: '服务运维/银杏备用.md', dataset_name: '运维笔记', similarity: 0.62 },
+      { key: '银杏', content: '银杏 私密 kbdiary', document_name: '私密/日记.md', dataset_name: '其他笔记', similarity: 0.5 });
+    const otherVault = await api('/vaults', 'POST', { name: '别人的库' }, otherToken);
+    assert.equal((await call(`/tabularius/vaults/${otherVault.id}/knowledge`, 'PUT', { enabled: true }, otherToken)).status, 403);
+    assert.equal((await api('/tabularius', 'GET', undefined, otherToken)).knowledge, false);
+    assert.equal((await api('/tabularius')).knowledge, true);
+    // The stream and the final answer, which the scripted model makes a copy of the tool result.
+    const ask = async text => {
+      const stream = await (await call(`/tabularius/conversations/${conversation.id}/messages`, 'POST', { message: text })).text();
+      return { stream, answer: (await api(`/tabularius/conversations/${conversation.id}`)).messages.at(-1).text };
+    };
+    assert.match((await ask('KB 银杏')).answer, /unknown tool search_knowledge_base/, 'no knowledge base tool while it is off');
+    assert(!mock.requests.anthropic.at(-1).body.tools.some(tool => tool.name === 'search_knowledge_base'));
+    await api(`/tabularius/vaults/${vault.id}/knowledge`, 'PUT', { enabled: true });
+    let { stream: kbStream, answer: kb } = await ask('KB 银杏');
+    assert.match(kbStream, /event: tool\ndata: {"name":"search_knowledge_base","input":{"question":"银杏"}}/);
+    assert.match(kb, /\[\[运维\/服务器\/紫藤.md\]\]/, 'a document present in the vault is cited as a note');
+    assert.match(kb, /Knowledge base 运维笔记: 服务运维\/银杏备用.md/);
+    assert.doesNotMatch(kb, /kbdiary|私密/);
+    assert.deepEqual(mock.requests.mcp.find(r => r.body.method === 'tools/call').body.params.arguments, { question: '银杏', dataset_ids: ['ds-ops', 'ds-notes'], page_size: 8 });
+    // RAGFlow restarted: the next call reconnects once.
+    mock.restart();
+    assert.match((await ask('KB 银杏')).answer, /备用说明/);
+    assert.equal(mock.requests.mcp.filter(r => r.body.method === 'initialize').length, 2);
+    for (const secret of ['kbsecret123', 'kbdiary']) assert(!mock.requests.anthropic.map(r => r.raw).join('\n').includes(secret), `${secret} reached a provider`);
+
     // Restart with the other provider: the client resumes without the passphrase and the conversation continues.
     await page.close();
     await gateway.close();
-    url = await start(openai('gpt-test'));
+    url = await start(openai('gpt-test'), 'test-embed-2');
     await until('the hosted client to resume', async () => (await status()).replicated);
+    // A different embedding model rebuilds the index with its own vectors.
+    await until('the index to be rebuilt with the new model', () => db.prepare('SELECT embedding_model FROM tabularius_vaults').get()?.embedding_model === 'test-embed-2' && db.prepare('SELECT count(*) AS n FROM tabularius_chunks').get().n > 0);
+    assert(mock.requests.embeddings.some(r => r.body.model === 'test-embed-2'));
+    assert(mock.requests.embeddings.every(r => r.body.input.length <= 4), 'embedding requests respect the batch size');
     const stream = await (await call(`/tabularius/conversations/${conversation.id}/messages`, 'POST', { message: '银杏节点' })).text();
     assert.match(stream, /event: tool\ndata: {"name":"search_notes"/);
     assert.match(stream, /event: done\ndata: {"read":\["运维\/服务器\/紫藤.md"\]}/);
@@ -252,7 +287,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert(openaiSent.includes('银杏节点') && !openaiSent.includes('hunter2') && !openaiSent.includes('secretdiary'));
     assert.equal(mock.requests.openai[0].body.messages[0].role, 'system');
     const transcript = await api(`/tabularius/conversations/${conversation.id}`);
-    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !m.text.startsWith('PROPOSE')).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
+    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
     assert.deepEqual(transcript.messages.flatMap(m => m.tools ?? []).filter(tool => tool.proposal).map(tool => tool.proposal.status), ['applied', 'applied', 'discarded']);
 
     // Disabling removes everything the server held for this vault.

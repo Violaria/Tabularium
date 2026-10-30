@@ -1,9 +1,9 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { Compose, docker, requireCompose, type ComposeConfig } from './docker.ts';
 import {
-  APP_TARGET, ENV_NAME, NOTES_TARGET, backup, bindFiles, checkCouch, clearVolume, importVolume, inspectSqlite, serverVersion, tar, verify,
+  APP_TARGET, ENV_NAME, NOTES_TARGET, backup, bindFiles, checkCouch, composeFiles, clearVolume, importVolume, inspectSqlite, serverVersion, tar, verify,
   type DeploymentOptions,
 } from './archive.ts';
 import { restore } from './restore.ts';
@@ -14,7 +14,7 @@ const failure = (error: unknown) => (error as Error).message;
 
 export async function upgrade(options: DeploymentOptions & { image: string }) {
   await requireCompose();
-  const compose = new Compose([options.compose], options.envFile, options.project);
+  const compose = new Compose(options.compose, options.envFile, options.project);
   const config = await compose.config();
   const server = await compose.state('server');
   if (!server) throw new Error(`Project ${options.project} has no server container`);
@@ -31,7 +31,7 @@ export async function upgrade(options: DeploymentOptions & { image: string }) {
   Object.assign(report, saved);
   if (!saved.backup.ok || !saved.source.ok) return report;
   const backupPath = saved.backup.path;
-  const rollback = ['node', 'deploy/backup/cli.ts', 'rollback', backupPath, '--compose', options.compose,
+  const rollback = ['node', 'deploy/backup/cli.ts', 'rollback', backupPath, ...options.compose.flatMap(file => ['--compose', file]),
     '--env-file', options.envFile, '--project', options.project, '--output', options.output].join(' ');
 
   const trialProject = `${options.project}-upgrade-${Date.now()}`;
@@ -67,7 +67,7 @@ export async function rollback(directory: string, options: DeploymentOptions) {
   const { path, manifest } = await verify(directory);
   if (manifest.source.project !== options.project) throw new Error(`Backup belongs to project ${manifest.source.project}, not ${options.project}`);
   await requireCompose();
-  const compose = new Compose([options.compose], options.envFile, options.project);
+  const compose = new Compose(options.compose, options.envFile, options.project);
   const config = await compose.config();
   const report: Record<string, unknown> = { ok: false, target: { backup: path, image: manifest.versions.server.image, version: manifest.versions.server.version } };
   const started = Date.now();
@@ -110,7 +110,8 @@ export async function rollback(directory: string, options: DeploymentOptions) {
   try {
     await tar('-xf', join(path, 'config.tar'), '-C', extracted);
     const current: [string, string][] = [[ENV_NAME, compose.envFile],
-      ...[manifest.source.composeFile, ...bindFiles(compose, config)].map(file => [file, join(compose.directory, file)] as [string, string])];
+      ...composeFiles(manifest).map(name => [name, compose.files.find(file => basename(file) === name) ?? join(compose.directory, name)] as [string, string]),
+      ...bindFiles(compose, config).map(file => [file, join(compose.directory, file)] as [string, string])];
     const changed = [];
     for (const [name, file] of current) {
       const saved = await readFile(join(extracted, name)).catch(() => undefined);

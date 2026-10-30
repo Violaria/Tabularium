@@ -1,4 +1,4 @@
-// Stand-ins for the Anthropic Messages API, OpenAI Chat Completions and OpenAI embeddings, enough for the official SDKs.
+// Stand-ins for the Anthropic Messages API, OpenAI Chat Completions, OpenAI embeddings and RAGFlow's MCP server, enough for the official SDKs.
 // The model is scripted: search for the user's question, read the first note found, then answer citing it with a quote;
 // a question "PROPOSE <json>" proposes those changes instead.
 // Every request body is kept so tests can check what would have left the server.
@@ -19,6 +19,8 @@ const lastUserText = messages => {
 function plan(results, question) {
   // "PROPOSE <json>" makes the model call propose_changes with that input, then repeat the tool's answer.
   if (question.startsWith('PROPOSE ')) return results.length ? { text: results[0] } : { tool: 'propose_changes', input: JSON.parse(question.slice(8)) };
+  // "KB <question>" searches the knowledge base and repeats what came back.
+  if (question.startsWith('KB ')) return results.length ? { text: results[0] } : { tool: 'search_knowledge_base', input: { question: question.slice(3) } };
   if (!results.length) return { tool: 'search_notes', input: { query: question } };
   const found = /\[\[([^\]]+)\]\]/.exec(results[0]);
   if (results.length === 1 && found) return { tool: 'read_note', input: { path: found[1] } };
@@ -27,7 +29,10 @@ function plan(results, question) {
 }
 
 export async function startMockProviders() {
-  const requests = { anthropic: [], openai: [], embeddings: [] };
+  const requests = { anthropic: [], openai: [], embeddings: [], mcp: [] };
+  const sessions = new Set();
+  let sessionCount = 0;
+  const knowledge = [];
   const server = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -91,6 +96,23 @@ export async function startMockProviders() {
       res.end('data: [DONE]\n\n');
       return;
     }
+    if (path === '/mcp') {
+      // RAGFlow's MCP server: sessions are forgotten by restart(), as when RAGFlow restarts.
+      requests.mcp.push({ headers: req.headers, body });
+      const session = req.headers['mcp-session-id'];
+      if (body.method === 'initialize') {
+        const id = `session-${++sessionCount}`; sessions.add(id);
+        res.writeHead(200, { 'content-type': 'application/json', 'mcp-session-id': id });
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { protocolVersion: body.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'ragflow', version: '0' } } }));
+        return;
+      }
+      if (!sessions.has(session)) { res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32001, message: 'Session not found' }, id: null })); return; }
+      if (body.id === undefined) { res.writeHead(202).end(); return; }
+      const chunks = knowledge.filter(chunk => chunk.content.includes(body.params.arguments.question) || body.params.arguments.question.includes(chunk.key));
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: false, content: [{ type: 'text', text: JSON.stringify({ chunks }) }] } }));
+      return;
+    }
     if (path === '/v1/embeddings') {
       requests.embeddings.push({ headers: req.headers, body, raw });
       // Deterministic vectors: character counts folded into 32 dimensions.
@@ -103,5 +125,5 @@ export async function startMockProviders() {
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
-  return { url: `http://127.0.0.1:${server.address().port}`, requests, close: () => new Promise(resolve => server.close(resolve)) };
+  return { url: `http://127.0.0.1:${server.address().port}`, requests, knowledge, restart: () => sessions.clear(), close: () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }) };
 }

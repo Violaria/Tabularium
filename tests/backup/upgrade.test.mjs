@@ -51,8 +51,14 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
   await writeFile(env, [`TABULARIUM_ADMIN_PASSWORD=${adminPassword}`, `COUCHDB_ADMIN_PASSWORD=${randomBytes(16).toString('hex')}`,
     `COUCHDB_SYNC_PASSWORD=${randomBytes(16).toString('hex')}`, `TABULARIUM_PORT=${port}`, ''].join('\n'), { mode: 0o600 });
   const output = join(directory, 'backups');
-  const compose = (...args) => docker('compose', '-f', COMPOSE, '--env-file', env, '-p', project, ...args);
-  const deployment = ['--compose', COMPOSE, '--env-file', env, '--project', project, '--output', output];
+  // A second Compose file joins the server to an external network, as a deployment does to reach a local service.
+  const extra = join(directory, 'compose.extra.yaml');
+  const network = `${project}-extra`;
+  await writeFile(extra, `services:\n  server:\n    networks: [edge, database, extra]\nnetworks:\n  extra:\n    name: ${network}\n    external: true\n`);
+  await docker('network', 'create', network);
+  const compose = (...args) => docker('compose', '-f', COMPOSE, '-f', extra, '--env-file', env, '-p', project, ...args);
+  const deployment = ['--compose', COMPOSE, '--compose', extra, '--env-file', env, '--project', project, '--output', output];
+  const networks = async () => Object.keys(JSON.parse(await docker('inspect', '-f', '{{json .NetworkSettings.Networks}}', (await container()).ID)));
   const container = async () => JSON.parse((await compose('ps', '-a', '--format', 'json', 'server')).trim());
   const runningImage = async () => (await docker('inspect', '-f', '{{.Image}}', (await container()).ID)).trim();
   const images = [];
@@ -130,6 +136,8 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
       assert.equal((await cli('verify', upgradeBackup)).code, 0);
       assert.equal(await runningImage(), next);
       assert.equal(await schema(next), migrated);
+      assert((await networks()).includes(network), 'the upgraded server keeps the extra network');
+      assert.deepEqual(JSON.parse(await readFile(join(upgradeBackup, 'manifest.json'), 'utf8')).source.composeFiles, ['compose.yaml', 'compose.extra.yaml']);
       await sync('/h:before');
       await api('/me', 'GET', undefined, admin);
       assert.equal(await readFile(COMPOSE, 'utf8').then(text => text.includes('-next')), false);
@@ -156,6 +164,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
       assert.equal(out.schema, current);
       assert.equal(await runningImage(), baseId);
       assert.equal(await schema(baseId), current);
+      assert((await networks()).includes(network));
       await sync('/h:before');
       await sync('/h:after-upgrade', 'GET', undefined, 404);
       await api('/me', 'GET', undefined, admin, 401);
@@ -183,6 +192,7 @@ test('upgrade with trial run and rollback to the pre-upgrade image and data', { 
     });
   } finally {
     await docker('compose', '-p', project, 'down', '-v').catch(() => {});
+    await docker('network', 'rm', network).catch(() => {});
     for (const image of [`${project}-server`, `${project}-next:test`, `${project}-broken:test`, ...images]) await docker('image', 'rm', '-f', image).catch(() => {});
     await rm(directory, { recursive: true, force: true });
   }

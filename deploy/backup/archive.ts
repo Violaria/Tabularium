@@ -17,14 +17,17 @@ export interface DatabaseCounts { docs: number; deleted: number; local: number }
 export interface SqliteInfo { integrity: string[]; foreignKeys: number; schema: number; vaults: { name: string; state: string }[]; sessions?: number }
 export interface Manifest {
   format: number; id: string; createdAt: string; complete: boolean;
-  source: { project: string; composeFile: string };
+  // `composeFiles` lists every Compose file in order; backups made before it have only `composeFile`.
+  source: { project: string; composeFile: string; composeFiles?: string[] };
   versions: { compose: string; server: { image: string; version: string; node: string }; couchdb: { image: string; version: string } };
   sqlite: { schema: number; vaults: number; notReady: string[] };
   couchdb: Record<string, DatabaseCounts>;
   timing: { stoppedToExportedMs: number; exportMs: number };
   files: FileEntry[];
 }
-export interface DeploymentOptions { compose: string; envFile: string; project: string; output: string }
+export interface DeploymentOptions { compose: string[]; envFile: string; project: string; output: string }
+
+export const composeFiles = (manifest: Manifest) => manifest.source.composeFiles ?? [manifest.source.composeFile];
 export interface BackupReport {
   backup: { ok: true; path: string; notReadyVaults: string[]; timing: Manifest['timing'] } | { ok: false; stage: string; error: string };
   source: { ok: true; running: { couchdb: boolean; server: boolean }; downtimeMs: number } | { ok: false; error: string } | { ok: true; resumed: false };
@@ -104,7 +107,8 @@ export async function checkCouch(compose: Compose, config: ComposeConfig, manife
 // With `resume: false` a successful backup leaves the source stopped, for callers that replace its data next.
 export async function backup(options: DeploymentOptions, resume = true): Promise<BackupReport> {
   const composeVersion = await requireCompose();
-  const compose = new Compose([options.compose], options.envFile, options.project);
+  const compose = new Compose(options.compose, options.envFile, options.project);
+  if (new Set(compose.files.map(file => basename(file))).size !== compose.files.length) throw new Error('Compose files must have different names');
   const config = await compose.config();
   const appVolume = compose.volume(config, 'server', APP_TARGET);
   const notesVolume = compose.volume(config, 'couchdb', NOTES_TARGET);
@@ -148,7 +152,8 @@ export async function backup(options: DeploymentOptions, resume = true): Promise
     stage = 'export configuration';
     const staging = join(partial, '.config');
     await mkdir(staging);
-    for (const file of [basename(compose.files[0]), ...bindFiles(compose, config)]) {
+    for (const file of compose.files) await cp(file, join(staging, basename(file)));
+    for (const file of bindFiles(compose, config)) {
       await mkdir(dirname(join(staging, file)), { recursive: true });
       await cp(join(compose.directory, file), join(staging, file));
     }
@@ -167,7 +172,7 @@ export async function backup(options: DeploymentOptions, resume = true): Promise
     }
     const manifest: Manifest = {
       format: FORMAT, id, createdAt: new Date().toISOString(), complete: true,
-      source: { project: options.project, composeFile: basename(compose.files[0]) },
+      source: { project: options.project, composeFile: basename(compose.files[0]), composeFiles: compose.files.map(file => basename(file)) },
       versions: { compose: composeVersion, server: { image: serverImage, version, node }, couchdb: { image: couchImage, version: couchVersion } },
       sqlite: { schema: sqlite.schema, vaults: sqlite.vaults.length, notReady: sqlite.vaults.filter(v => v.state !== 'ready').map(v => v.name) },
       couchdb: databases,

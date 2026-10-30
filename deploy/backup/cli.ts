@@ -4,21 +4,25 @@ import { restore } from './restore.ts';
 import { rollback, upgrade } from './upgrade.ts';
 
 const usage = `Usage:
-  node deploy/backup/cli.ts backup   --compose <file> --env-file <file> --project <name> --output <dir>
+  node deploy/backup/cli.ts backup   --compose <file>... --env-file <file> --project <name> --output <dir>
   node deploy/backup/cli.ts verify   <backup-dir>
   node deploy/backup/cli.ts restore  <backup-dir> --project <name> --target <dir> --port <port>
-  node deploy/backup/cli.ts upgrade  --image <image> --compose <file> --env-file <file> --project <name> --output <dir>
-  node deploy/backup/cli.ts rollback <backup-dir> --compose <file> --env-file <file> --project <name> --output <dir>`;
+  node deploy/backup/cli.ts upgrade  --image <image> --compose <file>... --env-file <file> --project <name> --output <dir>
+  node deploy/backup/cli.ts rollback <backup-dir> --compose <file>... --env-file <file> --project <name> --output <dir>`;
 const [command, ...rest] = process.argv.slice(2);
 const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: {
-  compose: { type: 'string' }, 'env-file': { type: 'string' }, project: { type: 'string' },
+  compose: { type: 'string', multiple: true }, 'env-file': { type: 'string' }, project: { type: 'string' },
   output: { type: 'string' }, target: { type: 'string' }, port: { type: 'string' }, image: { type: 'string' },
 } });
-function need(name: keyof typeof values) {
+function need(name: Exclude<keyof typeof values, 'compose'>) {
   if (!values[name]) { console.error(usage); process.exit(2); }
   return values[name] as string;
 }
-const deployment = () => ({ compose: need('compose'), envFile: need('env-file'), project: need('project'), output: need('output') });
+function composeFiles() {
+  if (!values.compose?.length) { console.error(usage); process.exit(2); }
+  return values.compose;
+}
+const deployment = () => ({ compose: composeFiles(), envFile: need('env-file'), project: need('project'), output: need('output') });
 const print = (report: unknown) => console.log(JSON.stringify(report, null, 2));
 try {
   if (command === 'backup') {

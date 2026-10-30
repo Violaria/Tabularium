@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { Compose, docker, requireCompose, volumeExists } from './docker.ts';
-import { APP_TARGET, ENV_NAME, NOTES_TARGET, checkCouch, importVolume, inspectSqlite, tar, verify } from './archive.ts';
+import { APP_TARGET, ENV_NAME, NOTES_TARGET, checkCouch, composeFiles, importVolume, inspectSqlite, tar, verify } from './archive.ts';
 
 // An empty `port` lets Docker choose the loopback port; `image` replaces the backup's server image (used by upgrade trials).
 export async function restore(directory: string, options: { project: string; target: string; port: string; image?: string }) {
@@ -15,8 +15,8 @@ export async function restore(directory: string, options: { project: string; tar
 
   const staging = await mkdtemp(join(dirname(target), `.${basename(target)}.restore-`));
   await tar('-xf', join(path, 'config.tar'), '-C', staging);
-  const files = [join(staging, manifest.source.composeFile), join(staging, 'compose.override.yaml')];
-  await writeFile(files[1], `services:
+  const files = [...composeFiles(manifest).map(file => join(staging, file)), join(staging, 'compose.override.yaml')];
+  await writeFile(files.at(-1)!, `services:
   server:
     build: !reset null
     image: ${image}
