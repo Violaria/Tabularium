@@ -1,17 +1,19 @@
-// Acceptance of Tabularius on a read-only copy of a real vault, with the real local services: the model on vLLM, Infinity
-// embeddings, the RAGFlow MCP and SearXNG. A recording proxy in front of vLLM checks that masked values never reach the model.
-// Usage: TABULARIUS_VLLM_KEY=... node tests/tabularius/acceptance.mjs [vault]; the transcript goes to test-runs/.
+// Acceptance of Tabularius on a read-only copy of a real vault, with real services: the model on vLLM or OpenAI, Infinity
+// embeddings, the RAGFlow MCP and, for vLLM, SearXNG. A recording proxy in front of the model checks that masked values
+// never reach it. Usage: TABULARIUS_VLLM_KEY=... node tests/tabularius/acceptance.mjs [vault], or with
+// TABULARIUS_PROVIDER=openai, TABULARIUS_MODEL and OPENAI_API_KEY; the transcript goes to test-runs/.
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, request } from 'node:http';
+import { request as secureRequest } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createGateway } from '../../apps/server/dist/server.js';
-import { embedder, vllm } from '../../apps/server/dist/tabularius/providers.js';
+import { embedder, openai, vllm } from '../../apps/server/dist/tabularius/providers.js';
 import { ragflow } from '../../apps/server/dist/tabularius/knowledge.js';
 import { createFilter } from '../../apps/server/dist/tabularius/filter.js';
 
@@ -20,8 +22,9 @@ const root = resolve(import.meta.dirname, '../..');
 const cliPath = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
 const sourceVault = resolve(process.argv[2] ?? '/opt/obsidian/Commentarii');
 const env = name => { const value = process.env[name]; if (!value) throw new Error(`${name} is required`); return value; };
-const vllmUrl = process.env.TABULARIUS_VLLM_URL ?? 'http://127.0.0.1:8000';
-const model = process.env.TABULARIUS_MODEL ?? 'Esmeralda';
+const providerName = process.env.TABULARIUS_PROVIDER ?? 'vllm';
+const upstreamUrl = providerName === 'openai' ? 'https://api.openai.com' : process.env.TABULARIUS_VLLM_URL ?? 'http://127.0.0.1:8000';
+const model = process.env.TABULARIUS_MODEL ?? (providerName === 'openai' ? env('TABULARIUS_MODEL') : 'Esmeralda');
 const embeddingUrl = process.env.TABULARIUS_EMBEDDING_URL ?? 'http://127.0.0.1:8180/v1';
 const mcpUrl = process.env.TABULARIUS_RAGFLOW_MCP_URL ?? 'http://127.0.0.1:9382/mcp';
 const datasets = (process.env.TABULARIUS_RAGFLOW_DATASETS ?? '303720b6d3af11f1b9469553e347eb9c,303a8dfad3af11f1b9469553e347eb9c').split(',');
@@ -41,8 +44,8 @@ const proxy = createServer((req, res) => {
   req.on('end', () => {
     const body = Buffer.concat(chunks);
     recorded.push(body.toString('utf8'));
-    const target = new URL(req.url, vllmUrl);
-    const upstream = request(target, { method: req.method, headers: { ...req.headers, host: target.host } }, response => {
+    const target = new URL(req.url, upstreamUrl);
+    const upstream = (target.protocol === 'https:' ? secureRequest : request)(target, { method: req.method, headers: { ...req.headers, host: target.host } }, response => {
       res.writeHead(response.statusCode, response.headers);
       const index = recorded.length;
       let streamed = '';
@@ -54,6 +57,8 @@ const proxy = createServer((req, res) => {
   });
 }).listen(0, '127.0.0.1');
 await new Promise(r => proxy.once('listening', r));
+// The OpenAI SDK reads its base URL from the environment.
+if (providerName === 'openai') process.env.OPENAI_BASE_URL = `http://127.0.0.1:${proxy.address().port}/v1`;
 
 const runId = `tacc-${Date.now()}`;
 const temp = await mkdtemp(join(tmpdir(), 'tabularius-acceptance-'));
@@ -77,9 +82,9 @@ try {
   gateway = await createGateway({ database, bootstrapUser: 'admin', bootstrapPassword: password, origins: [],
     couch: { url: couchUrl, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword: randomBytes(24).toString('hex') },
     tabularius: { key: randomBytes(32), root: join(temp, 'tabularius'), cli: cliPath,
-      provider: vllm(model, `http://127.0.0.1:${proxy.address().port}/v1`, env('TABULARIUS_VLLM_KEY'), 65_536),
+      provider: providerName === 'openai' ? openai(model) : vllm(model, `http://127.0.0.1:${proxy.address().port}/v1`, env('TABULARIUS_VLLM_KEY'), 65_536),
       embedder: embedder('bge-m3', embeddingUrl, undefined, 32), knowledge: ragflow(mcpUrl, datasets),
-      web: { options: { allowed: [], blocked: [], maxUses: 5 }, searxng, intranet: [] }, modeLimit: 'read-only', params: {} } });
+      web: { options: { allowed: [], blocked: [], maxUses: 5 }, searxng: providerName === 'vllm' ? searxng : undefined, intranet: [] }, modeLimit: 'read-only', params: {} } });
   const url = await gateway.listen();
   let token;
   const call = (path, method = 'GET', body) => fetch(`${url}/api/v1${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body),
@@ -172,7 +177,7 @@ try {
   // The web through SearXNG.
   await api(`/tabularius/vaults/${vault.id}/web`, 'PUT', { enabled: true });
   r = await ask('联网查证：vLLM 项目在 GitHub 上的仓库地址是什么？请给出来源。', true);
-  check('联网：SearXNG 搜索并给出来源', !r.error && r.tools.some(t => t.name === 'web_search') && r.done?.sources.length > 0, r.done?.sources.map(s => s.url).join(', '));
+  check(providerName === 'vllm' ? '联网：SearXNG 搜索并给出来源' : '联网：提供商自带搜索并给出来源', !r.error && r.tools.some(t => t.name === 'web_search') && r.done?.sources.length > 0, r.done?.sources.map(s => s.url).join(', '));
 
   // Memories across conversations.
   r = await ask('请记住：我希望回答先给结论，再给理由。', true);
