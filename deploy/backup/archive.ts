@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, statSync } from 'node:fs';
 import { chmod, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -81,11 +81,13 @@ export async function importVolume(image: string, volume: string, directory: str
 export async function clearVolume(image: string, volume: string) {
   await docker(['run', '--rm', '--user', '0', '--network', 'none', '--entrypoint', 'find', '-v', `${volume}:/v`, image, '/v', '-mindepth', '1', '-delete']);
 }
+// Configuration files mounted from the Compose directory; a socket (the sandbox's Docker socket) is not configuration.
 export function bindFiles(compose: Compose, config: ComposeConfig) {
-  return Object.values(config.services).flatMap(service => service.volumes ?? []).filter(v => v.type === 'bind').map(v => {
+  return Object.values(config.services).flatMap(service => service.volumes ?? []).filter(v => v.type === 'bind').flatMap(v => {
     const path = relative(compose.directory, v.source);
-    if (path.startsWith('..')) throw new Error(`Bind mount ${v.source} is outside the Compose directory`);
-    return path;
+    if (!path.startsWith('..')) return [path];
+    if (statSync(v.source, { throwIfNoEntry: false })?.isSocket()) return [];
+    throw new Error(`Bind mount ${v.source} is outside the Compose directory`);
   });
 }
 // Compares every database with the manifest and checks that each ready vault's database grants access to the sync user only.

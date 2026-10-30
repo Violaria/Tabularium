@@ -55,6 +55,8 @@ export async function upgrade(options: DeploymentOptions & { image: string }) {
     await compose.run('stop', 'server');
     await docker(['tag', next, serviceImage(config, options.project)]);
     await compose.run('up', '-d', '--wait', '--no-build', '--no-deps', '--force-recreate', 'server');
+    // The sandbox runs from the same image; when its profile is active it moves to the new version too.
+    if (config.services.sandbox) await compose.run('up', '-d', '--no-build', '--no-deps', '--force-recreate', 'sandbox');
     report.switch = { ok: true, downtimeMs: Date.now() - switched };
     report.ok = true;
   } catch (error) {

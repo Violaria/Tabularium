@@ -38,6 +38,9 @@ services:
       TABULARIUS_SEARXNG_URL: ${TABULARIUS_SEARXNG_URL:-}
       TABULARIUS_INTRANET: ${TABULARIUS_INTRANET:-}
       TABULARIUS_SSH_TIMEOUT: ${TABULARIUS_SSH_TIMEOUT:-}
+      TABULARIUS_SANDBOX_URL: ${TABULARIUS_SANDBOX_URL:-}
+      TABULARIUS_SANDBOX_IMAGES: ${TABULARIUS_SANDBOX_IMAGES:-}
+      TABULARIUM_SANDBOX_TOKEN: ${TABULARIUM_SANDBOX_TOKEN:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
@@ -50,7 +53,7 @@ services:
       - "127.0.0.1:${TABULARIUM_PORT:-3000}:3000"
     volumes:
       - application:/data
-    networks: [edge, database]
+    networks: [edge, database, sandbox]
     depends_on:
       couchdb:
         condition: service_healthy
@@ -59,6 +62,21 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+    restart: unless-stopped
+  # The only service with Docker access: runs Tabularius's throwaway containers. Off unless COMPOSE_PROFILES=sandbox.
+  sandbox:
+    profiles: [sandbox]
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    command: ["node", "dist/sandbox.js"]
+    user: "0"
+    environment:
+      TABULARIUM_SANDBOX_TOKEN: ${TABULARIUM_SANDBOX_TOKEN:-}
+      TABULARIUS_SANDBOX_IMAGES: ${TABULARIUS_SANDBOX_IMAGES:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [sandbox]
     restart: unless-stopped
   couchdb:
     image: couchdb:3.5.3@sha256:bed314d10cdf58c0fff63352db4c3f168df58a185a773c0e2295105375c5ef10
@@ -79,6 +97,8 @@ services:
 networks:
   edge:
   database:
+    internal: true
+  sandbox:
     internal: true
 volumes:
   application:

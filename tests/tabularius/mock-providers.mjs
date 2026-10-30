@@ -22,6 +22,8 @@ function plan(results, question) {
   if (question.startsWith('PROPOSE ')) return results.length ? { text: results[0] } : { tool: 'propose_changes', input: JSON.parse(question.slice(8)) };
   // "KB <question>" searches the knowledge base and repeats what came back.
   if (question.startsWith('KB ')) return results.length ? { text: results[0] } : { tool: 'search_knowledge_base', input: { question: question.slice(3) } };
+  // "SANDBOX <json>" runs run_sandbox with that input and repeats the result.
+  if (question.startsWith('SANDBOX ')) return results.length ? { text: results[0] } : { tool: 'run_sandbox', input: JSON.parse(question.slice(8)) };
   // "SSH <host> <command>" runs a command over SSH and repeats the result.
   if (question.startsWith('SSH ')) {
     const [, host, ...command] = question.split(' ');

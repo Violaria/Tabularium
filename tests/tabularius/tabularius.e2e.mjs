@@ -15,6 +15,7 @@ import { once } from 'node:events';
 import { createGateway } from '../../apps/server/dist/server.js';
 import { anthropic, embedder, openai, vllm } from '../../apps/server/dist/tabularius/providers.js';
 import { ragflow } from '../../apps/server/dist/tabularius/knowledge.js';
+import { serveSandbox } from '../../apps/server/dist/sandbox.js';
 import { startMockProviders } from './mock-providers.mjs';
 
 const exec = promisify(execFile);
@@ -40,6 +41,9 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     env: { ...process.env, BASELINE_PASSWORD: password }, timeout: 90_000,
   });
   const mock = await startMockProviders();
+  // The sandbox service against this host's Docker, with the one image the tests have locally.
+  const sandboxToken = randomBytes(24).toString('hex');
+  const sandbox = await serveSandbox({ socket: '/var/run/docker.sock', images: ['alpine:3'], token: sandboxToken, port: 0, host: '127.0.0.1' });
   process.env.ANTHROPIC_BASE_URL = mock.url; process.env.ANTHROPIC_API_KEY = 'test-anthropic';
   process.env.OPENAI_BASE_URL = `${mock.url}/v1`; process.env.OPENAI_API_KEY = 'test-openai';
   const database = join(temp, 'app.sqlite');
@@ -51,7 +55,8 @@ test('Tabularius', { timeout: 900_000 }, async () => {
       couch: { url: couchUrl, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword },
       tabularius: { key, root: join(temp, 'tabularius'), cli: cliPath, provider,
         embedder: embedder(embeddingModel, `${mock.url}/v1`, 'test-embed-key', 4), knowledge: ragflow(`${mock.url}/mcp`, ['ds-ops', 'ds-notes']),
-        web: { options: { allowed: [], blocked, maxUses: 3 }, searxng: mock.url, intranet: ['127.0.0.1'] }, modeLimit: 'restricted', params: {} } });
+        web: { options: { allowed: [], blocked, maxUses: 3 }, searxng: mock.url, intranet: ['127.0.0.1'] }, modeLimit: 'restricted', params: {},
+        sandbox: { url: `http://127.0.0.1:${sandbox.port}`, token: sandboxToken, images: ['alpine:3'] } } });
     return gateway.listen();
   };
   try {
@@ -392,6 +397,23 @@ test('Tabularius', { timeout: 900_000 }, async () => {
       await exec('docker', ['rm', '-f', sshd]).catch(() => {});
     }
 
+    // Sandbox: a throwaway container with a read-only root, no network, nobody's uid and a time limit; output masked.
+    const box = async input => (await ask(`SANDBOX ${JSON.stringify(input)}`)).answer;
+    let out = await box({ image: 'alpine:3', command: 'cat data.txt; id -u; touch /x; echo written > /work/ok && cat ok', files: { 'data.txt': 'password: hunter7\n' } });
+    assert.match(out, /Exit code: 0/);
+    assert.match(out, /password: \[REDACTED\]\n65534\n[\s\S]*written/);
+    assert.match(out, /Read-only file system/);
+    // The credential was in the request the user typed; what must not carry it is the command output returned to the model.
+    const results = mock.requests.anthropic.flatMap(r => r.body.messages.flatMap(m => Array.isArray(m.content) ? m.content.filter(b => b.type === 'tool_result') : []));
+    assert(results.some(b => JSON.stringify(b).includes('65534')) && !results.some(b => JSON.stringify(b).includes('hunter7')));
+    assert.match(await box({ image: 'alpine:3', command: 'wget -q -T 3 -O- http://example.com' }), /Exit code: [1-9]/);
+    assert.match(await box({ image: 'alpine:3', command: 'echo hi', network: true }), /only in full permission mode/);
+    assert.match(await box({ image: 'alpine:3', command: 'sleep 30', timeout: 2 }), /Timed out and stopped/);
+    assert.match(await box({ image: 'python:3.13-slim', command: 'python -V' }), /not available/);
+    assert.equal((await fetch(`http://127.0.0.1:${sandbox.port}/run`, { method: 'POST', body: '{}' })).status, 401);
+    assert.equal((await exec('docker', ['ps', '-aq', '--filter', 'label=tabularius.sandbox'])).stdout.trim(), '', 'no sandbox container is left');
+    assert(db.prepare("SELECT count(*) AS n FROM tabularius_commands WHERE host_id='sandbox'").get().n >= 5);
+
     // Restart with the other provider: the client resumes without the passphrase and the conversation continues.
     await page.close();
     await gateway.close();
@@ -440,7 +462,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.match((await ask('WEB 版本')).answer, /address this mode does not allow/);
     assert.equal(mock.requests.page.length, 1);
     const transcript = await api(`/tabularius/conversations/${conversation.id}`);
-    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|REMEMBER|SSH) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
+    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|REMEMBER|SSH|SANDBOX) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
     assert.deepEqual(transcript.messages.flatMap(m => m.tools ?? []).filter(tool => tool.proposal).map(tool => tool.proposal.status), ['applied', 'applied', 'discarded']);
 
     // Disabling removes everything the server held for this vault.
@@ -456,6 +478,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await browser?.close();
     await gateway?.close();
     await mock.close();
+    await sandbox.close();
     await compose('down', '-v').catch(() => {});
     await rm(temp, { recursive: true, force: true });
   }

@@ -79,7 +79,7 @@ try {
     const composeFile = join(deploy, 'compose.yaml');
     const composeText = await readFile(composeFile, 'utf8');
     assert(composeText.includes('image: tabularium-server\n'));
-    await writeFile(composeFile, composeText.replace('image: tabularium-server\n', `image: ${testImage}\n`));
+    await writeFile(composeFile, composeText.replaceAll('image: tabularium-server\n', `image: ${testImage}\n`));
     const example = await readFile(join(deploy, '.env.example'), 'utf8');
     const env = example
       .replace(/^TABULARIUM_ADMIN_PASSWORD=.*$/m, `TABULARIUM_ADMIN_PASSWORD=${adminPassword}`)
@@ -175,6 +175,25 @@ https://localhost:${httpsPort} {
     assert.match(answer.text, /event: error\ndata: {"message":"OpenAI/);
     const page = await https('/tabularius/', { headers: { accept: 'text/html' } });
     assert.equal(page.status, 200);
+  });
+
+  await step('sandbox-in-image', async () => {
+    // The release image's sandbox entry point, with the host's Docker socket, as the sandbox profile runs it.
+    const token = randomBytes(24).toString('hex');
+    const name = `${project}-sandbox`;
+    await exec('docker', ['run', '-d', '--name', name, '--user', '0', '-v', '/var/run/docker.sock:/var/run/docker.sock', '-p', '127.0.0.1::3100',
+      '-e', `TABULARIUM_SANDBOX_TOKEN=${token}`, '-e', 'TABULARIUS_SANDBOX_IMAGES=alpine:3', testImage, 'node', 'dist/sandbox.js']);
+    try {
+      const port = (await exec('docker', ['port', name, '3100'])).stdout.trim().split(':').at(-1);
+      let result;
+      for (let i = 0; i < 30 && !result; i++) {
+        result = await fetch(`http://127.0.0.1:${port}/run`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ image: 'alpine:3', command: 'echo sandbox-ok; id -u' }) }).then(r => r.json()).catch(() => sleep(1000).then(() => undefined));
+      }
+      assert.equal(result.stdout, 'sandbox-ok\n65534\n', JSON.stringify(result));
+    } finally {
+      await exec('docker', ['rm', '-f', name]).catch(() => {});
+    }
   });
 
   await step('continuous-feed-through-proxy', async () => {

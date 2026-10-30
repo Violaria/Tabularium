@@ -38,7 +38,7 @@ await mkdir(deploy);
 const compose = await readFile(join(root, 'deploy/local/compose.yaml'), 'utf8');
 const build = '    build:\n      context: ../..\n      dockerfile: apps/server/Dockerfile\n';
 if (!compose.includes(build)) throw new Error('deploy/local/compose.yaml no longer has the expected build block');
-await writeFile(join(deploy, 'compose.yaml'), compose.replace(build, '    image: tabularium-server\n    pull_policy: never\n'));
+await writeFile(join(deploy, 'compose.yaml'), compose.replaceAll(build, '    image: tabularium-server\n    pull_policy: never\n'));
 await cp(join(root, 'deploy/local/couchdb.ini'), join(deploy, 'couchdb.ini'));
 await cp(join(root, 'deploy/local/.env.example'), join(deploy, '.env.example'));
 await mkdir(join(deploy, 'backup'));
