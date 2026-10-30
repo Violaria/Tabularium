@@ -22,6 +22,13 @@ function plan(results, question) {
   if (question.startsWith('PROPOSE ')) return results.length ? { text: results[0] } : { tool: 'propose_changes', input: JSON.parse(question.slice(8)) };
   // "KB <question>" searches the knowledge base and repeats what came back.
   if (question.startsWith('KB ')) return results.length ? { text: results[0] } : { tool: 'search_knowledge_base', input: { question: question.slice(3) } };
+  // "REMEMBER <fact>" stores a memory; "RECALL <words>" searches earlier conversations and reads the first one found.
+  if (question.startsWith('REMEMBER ')) return results.length ? { text: results[0] } : { tool: 'add_memory', input: { content: question.slice(9) } };
+  if (question.startsWith('RECALL ')) {
+    if (!results.length) return { tool: 'search_conversations', input: { query: question.slice(7) } };
+    if (results.length === 1) return { tool: 'read_conversation', input: { id: results[0].split(' ')[0] } };
+    return { text: results[1].slice(0, 200) };
+  }
   // "WEB <question>" (client-side web tools): search, fetch the first result, repeat the page. "WEBLEAK" fetches an altered URL.
   if (question.startsWith('WEB ') || question.startsWith('WEBLEAK ')) {
     if (!results.length) return { tool: 'web_search', input: { query: question.split(' ').slice(1).join(' ') } };

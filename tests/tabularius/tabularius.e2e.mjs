@@ -299,6 +299,28 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.equal(shown.text, '最新版本是 2.0。');
     await api(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: '' });
 
+    // Memories: Tabularius stores one when asked, a new conversation starts with it, and only its owner can see or change it.
+    assert.match((await ask('REMEMBER 回答用繁体中文')).answer, /Remembered as/);
+    const [memory] = await api('/tabularius/memories');
+    assert.equal(memory.content, '回答用繁体中文');
+    assert.deepEqual(await api('/tabularius/memories', 'GET', undefined, otherToken), []);
+    assert.equal((await call(`/tabularius/memories/${memory.id}`, 'PUT', { content: 'x' }, otherToken)).status, 404);
+    assert.equal((await call(`/tabularius/memories/${memory.id}`, 'DELETE', undefined, otherToken)).status, 404);
+    assert.equal((await call('/tabularius/memories', 'POST', { content: '' })).status, 400);
+    const fresh = await (await call(`/tabularius/vaults/${vault.id}/conversations`, 'POST', { message: '紫藤服务器' })).text();
+    const freshId = /"id":"([^"]+)"/.exec(fresh)[1];
+    assert.match(JSON.stringify(mock.requests.anthropic.at(-1).body.system), new RegExp(`\\[${memory.id}\\] 回答用繁体中文`));
+    // Earlier conversations: found by their words and read back.
+    const recall = await (await call(`/tabularius/conversations/${freshId}/messages`, 'POST', { message: 'RECALL 管理端口' })).text();
+    assert.match(recall, /"name":"search_conversations"/);
+    assert.match(recall, /"name":"read_conversation","input":{"id":"[^"]+"}/);
+    assert.match((await api(`/tabularius/conversations/${freshId}`)).messages.at(-1).text, /User: 紫藤服务器/);
+    // Long conversations: Claude compacts on the server.
+    const lastClaude = mock.requests.anthropic.at(-1);
+    assert.deepEqual(lastClaude.body.context_management, { edits: [{ type: 'compact_20260112' }] });
+    assert.match(lastClaude.headers['anthropic-beta'], /compact-2026-01-12/);
+    await api(`/tabularius/conversations/${freshId}`, 'DELETE');
+
     // Restart with the other provider: the client resumes without the passphrase and the conversation continues.
     await page.close();
     await gateway.close();
@@ -316,6 +338,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     // The Responses API: instructions carry the system prompt, encrypted reasoning items are replayed, OpenAI searches the web itself.
     assert.match(mock.requests.openai[0].body.instructions, /本库的规范/);
     assert.equal(mock.requests.openai[0].body.store, false);
+    assert.equal(mock.requests.openai[0].body.truncation, 'auto');
     assert(mock.requests.openai.at(-1).body.input.some(item => item.type === 'reasoning' && item.encrypted_content === 'enc-1'), 'reasoning items are replayed');
     web = await ask('WEB 最新版本');
     assert(mock.requests.openai.at(-1).body.tools.some(tool => tool.type === 'web_search'));
@@ -324,7 +347,8 @@ test('Tabularius', { timeout: 900_000 }, async () => {
 
     // vLLM: reasoning goes back on assistant messages; the web through SearXNG and the server's fetch, by permission mode.
     await gateway.close();
-    url = await start(vllm('esmeralda', `${mock.url}/v1`), 'test-embed-2', ['blocked.example.org']);
+    // A small context window makes the long history drop its earliest exchanges.
+    url = await start(vllm('esmeralda', `${mock.url}/v1`, undefined, 6000), 'test-embed-2', ['blocked.example.org']);
     await until('the hosted client to resume', async () => (await status()).replicated);
     web = await ask('WEB 版本');
     assert.match(web.answer, /版本 2.0\n+2026 年发布 & 支持 bge-m3。/);
@@ -333,6 +357,8 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     const vllmLast = mock.requests.vllm.at(-1).body;
     assert(vllmLast.messages.some(m => m.role === 'assistant' && m.reasoning === 'thinking-1'), 'reasoning is replayed to vLLM');
     assert(vllmLast.tools.some(tool => tool.function.name === 'fetch_url'));
+    assert.match(vllmLast.messages[1].content, /left out to fit the context window/);
+    assert(!JSON.stringify(vllmLast.messages).includes('"紫藤服务器"'), 'the first question was left out');
     assert(!JSON.stringify(vllmLast.messages).includes('blocked.example.org'), 'search results outside the domain rules are dropped');
     assert.equal(mock.requests.page.length, 1);
     // A URL the conversation never showed is refused, so note content cannot be smuggled out in a query string.
@@ -343,7 +369,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.match((await ask('WEB 版本')).answer, /address this mode does not allow/);
     assert.equal(mock.requests.page.length, 1);
     const transcript = await api(`/tabularius/conversations/${conversation.id}`);
-    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
+    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|REMEMBER) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
     assert.deepEqual(transcript.messages.flatMap(m => m.tools ?? []).filter(tool => tool.proposal).map(tool => tool.proposal.status), ['applied', 'applied', 'discarded']);
 
     // Disabling removes everything the server held for this vault.
