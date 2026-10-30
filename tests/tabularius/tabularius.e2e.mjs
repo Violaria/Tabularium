@@ -11,7 +11,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import { createGateway } from '../../apps/server/dist/server.js';
-import { anthropic, embedder, openai } from '../../apps/server/dist/tabularius/providers.js';
+import { anthropic, embedder, openai, vllm } from '../../apps/server/dist/tabularius/providers.js';
 import { ragflow } from '../../apps/server/dist/tabularius/knowledge.js';
 import { startMockProviders } from './mock-providers.mjs';
 
@@ -44,11 +44,12 @@ test('Tabularius', { timeout: 900_000 }, async () => {
   const key = randomBytes(32);
   let gateway, browser, couchUrl;
   const syncPassword = randomBytes(24).toString('hex');
-  const start = async (provider, embeddingModel = 'test-embed') => {
+  const start = async (provider, embeddingModel = 'test-embed', blocked = []) => {
     gateway = await createGateway({ database, bootstrapUser: 'admin', bootstrapPassword: password, origins: [],
       couch: { url: couchUrl, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword },
       tabularius: { key, root: join(temp, 'tabularius'), cli: cliPath, provider,
-        embedder: embedder(embeddingModel, `${mock.url}/v1`, 'test-embed-key', 4), knowledge: ragflow(`${mock.url}/mcp`, ['ds-ops', 'ds-notes']) } });
+        embedder: embedder(embeddingModel, `${mock.url}/v1`, 'test-embed-key', 4), knowledge: ragflow(`${mock.url}/mcp`, ['ds-ops', 'ds-notes']),
+        web: { options: { allowed: [], blocked, maxUses: 3 }, searxng: mock.url, intranet: ['127.0.0.1'] }, modeLimit: 'restricted', params: {} } });
     return gateway.listen();
   };
   try {
@@ -271,6 +272,33 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.equal(mock.requests.mcp.filter(r => r.body.method === 'initialize').length, 2);
     for (const secret of ['kbsecret123', 'kbdiary']) assert(!mock.requests.anthropic.map(r => r.raw).join('\n').includes(secret), `${secret} reached a provider`);
 
+    // Permission modes: restricted and full are for administrators, up to the server's limit; parameters are checked per provider.
+    assert.equal((await call(`/tabularius/vaults/${otherVault.id}/mode`, 'PUT', { mode: 'restricted' }, otherToken)).status, 403);
+    assert.equal((await call(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'full' })).status, 400);
+    assert.equal((await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'restricted' })).mode, 'restricted');
+    assert.deepEqual((await api('/tabularius')).modes, ['read-only', 'restricted']);
+    assert.deepEqual((await api('/tabularius', 'GET', undefined, otherToken)).modes, ['read-only']);
+    assert.equal((await call(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: '{"temperature": 0.5}' })).status, 400, 'Claude takes no sampling parameters');
+    await api(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: '{"effort": "high"}' });
+
+    // The web with Claude: server-side search, a paused turn continued unchanged, cited sources and an activity record.
+    assert(mock.requests.anthropic.every(r => !r.body.tools.some(tool => tool.type?.startsWith('web_'))), 'no web tools while the web is off');
+    await api(`/tabularius/vaults/${vault.id}/web`, 'PUT', { enabled: true });
+    const anthropicBefore = mock.requests.anthropic.length;
+    let web = await ask('WEB 最新版本');
+    assert.match(web.stream, /event: tool\ndata: {"name":"web_search","input":{"query":"最新版本"}}/);
+    assert.match(web.stream, /"sources":\[{"url":"https:\/\/example.com\/release","title":"Release notes"}\]/);
+    const [searching, continued] = mock.requests.anthropic.slice(anthropicBefore).map(r => r.body);
+    assert.deepEqual(searching.tools.filter(tool => tool.type?.startsWith('web_')).map(tool => [tool.type, tool.max_uses]), [['web_search_20260318', 3], ['web_fetch_20260318', 6]]);
+    assert.equal(searching.output_config.effort, 'high');
+    assert.equal(continued.messages.at(-1).role, 'assistant');
+    assert.equal(continued.messages.at(-1).content.find(block => block.type === 'web_search_tool_result').content[0].encrypted_content, `enc-${anthropicBefore + 1}`);
+    assert.equal(db.prepare("SELECT count(*) AS n FROM audit_events WHERE action='tabularius.web'").get().n, 1);
+    const shown = (await api(`/tabularius/conversations/${conversation.id}`)).messages.at(-1);
+    assert.deepEqual(shown.sources, [{ url: 'https://example.com/release', title: 'Release notes' }]);
+    assert.equal(shown.text, '最新版本是 2.0。');
+    await api(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: '' });
+
     // Restart with the other provider: the client resumes without the passphrase and the conversation continues.
     await page.close();
     await gateway.close();
@@ -282,12 +310,40 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert(mock.requests.embeddings.every(r => r.body.input.length <= 4), 'embedding requests respect the batch size');
     const stream = await (await call(`/tabularius/conversations/${conversation.id}/messages`, 'POST', { message: '银杏节点' })).text();
     assert.match(stream, /event: tool\ndata: {"name":"search_notes"/);
-    assert.match(stream, /event: done\ndata: {"read":\["运维\/服务器\/紫藤.md"\]}/);
+    assert.match(stream, /event: done\ndata: {"read":\["运维\/服务器\/紫藤.md"\],"sources":\[\]}/);
     const openaiSent = mock.requests.openai.map(r => r.raw).join('\n');
     assert(openaiSent.includes('银杏节点') && !openaiSent.includes('hunter2') && !openaiSent.includes('secretdiary'));
-    assert.equal(mock.requests.openai[0].body.messages[0].role, 'system');
+    // The Responses API: instructions carry the system prompt, encrypted reasoning items are replayed, OpenAI searches the web itself.
+    assert.match(mock.requests.openai[0].body.instructions, /本库的规范/);
+    assert.equal(mock.requests.openai[0].body.store, false);
+    assert(mock.requests.openai.at(-1).body.input.some(item => item.type === 'reasoning' && item.encrypted_content === 'enc-1'), 'reasoning items are replayed');
+    web = await ask('WEB 最新版本');
+    assert(mock.requests.openai.at(-1).body.tools.some(tool => tool.type === 'web_search'));
+    assert.match(web.stream, /event: tool\ndata: {"name":"web_search","input":{"query":"最新版本"}}/);
+    assert.match(web.stream, /"sources":\[{"url":"https:\/\/example.com\/release","title":"Release notes"}\]/);
+
+    // vLLM: reasoning goes back on assistant messages; the web through SearXNG and the server's fetch, by permission mode.
+    await gateway.close();
+    url = await start(vllm('esmeralda', `${mock.url}/v1`), 'test-embed-2', ['blocked.example.org']);
+    await until('the hosted client to resume', async () => (await status()).replicated);
+    web = await ask('WEB 版本');
+    assert.match(web.answer, /版本 2.0\n+2026 年发布 & 支持 bge-m3。/);
+    assert.doesNotMatch(web.answer, /ignore\(\)/);
+    assert.match(web.stream, /"sources":\[{"url":"http:\/\/127.0.0.1:\d+\/page","title":"发布说明"}\]/);
+    const vllmLast = mock.requests.vllm.at(-1).body;
+    assert(vllmLast.messages.some(m => m.role === 'assistant' && m.reasoning === 'thinking-1'), 'reasoning is replayed to vLLM');
+    assert(vllmLast.tools.some(tool => tool.function.name === 'fetch_url'));
+    assert(!JSON.stringify(vllmLast.messages).includes('blocked.example.org'), 'search results outside the domain rules are dropped');
+    assert.equal(mock.requests.page.length, 1);
+    // A URL the conversation never showed is refused, so note content cannot be smuggled out in a query string.
+    assert.match((await ask('WEBLEAK 版本')).answer, /only URLs that appeared in the conversation/);
+    assert.equal(mock.requests.page.length, 1);
+    // Read-only mode reaches only public addresses.
+    await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'read-only' });
+    assert.match((await ask('WEB 版本')).answer, /address this mode does not allow/);
+    assert.equal(mock.requests.page.length, 1);
     const transcript = await api(`/tabularius/conversations/${conversation.id}`);
-    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
+    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
     assert.deepEqual(transcript.messages.flatMap(m => m.tools ?? []).filter(tool => tool.proposal).map(tool => tool.proposal.status), ['applied', 'applied', 'discarded']);
 
     // Disabling removes everything the server held for this vault.
