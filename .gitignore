@@ -12,4 +12,4 @@ apps/server/cli-dist/
 apps/server/data/
 packages/custom-sort/dist/
 .claude/settings.local.json
-release/
+/release/
