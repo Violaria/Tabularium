@@ -1,5 +1,6 @@
 // Stand-ins for the Anthropic Messages API, OpenAI Chat Completions and OpenAI embeddings, enough for the official SDKs.
-// The model is scripted: search for the user's question, read the first note found, then answer citing it with a quote.
+// The model is scripted: search for the user's question, read the first note found, then answer citing it with a quote;
+// a question "PROPOSE <json>" proposes those changes instead.
 // Every request body is kept so tests can check what would have left the server.
 import { createServer } from 'node:http';
 import { once } from 'node:events';
@@ -16,6 +17,8 @@ const lastUserText = messages => {
 
 /** The next step of the script, from the tool results so far in the current question. */
 function plan(results, question) {
+  // "PROPOSE <json>" makes the model call propose_changes with that input, then repeat the tool's answer.
+  if (question.startsWith('PROPOSE ')) return results.length ? { text: results[0] } : { tool: 'propose_changes', input: JSON.parse(question.slice(8)) };
   if (!results.length) return { tool: 'search_notes', input: { query: question } };
   const found = /\[\[([^\]]+)\]\]/.exec(results[0]);
   if (results.length === 1 && found) return { tool: 'read_note', input: { path: found[1] } };

@@ -7,7 +7,7 @@ import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import { createGateway } from '../../apps/server/dist/server.js';
@@ -156,6 +156,90 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await cli('mirror', client.vault); await cli('sync');
     await until('the edit to be indexed', () => db.prepare("SELECT count(*) AS n FROM tabularius_chunks WHERE text LIKE '%银杏节点%'").get().n > 0);
 
+    // Proposals: checked before they are saved, reviewed as a diff in the browser, applied to the vault and synced to devices.
+    await writeFile(join(client.vault, '运维/索引.md'), '# 索引\n\n- [紫藤服务器](紫藤服务器.md)\n- [[紫藤服务器]]\n');
+    await cli('mirror', client.vault); await cli('sync');
+    const hosted = join(temp, 'tabularius', vault.id, 'vault');
+    await until('the index note to reach the hosted copy', () => access(join(hosted, '运维/索引.md')).then(() => true, () => false));
+    // From here the other device runs as a live daemon, like Obsidian: it applies remote moves and deletions and pushes local edits.
+    await writeFile(client.settings, JSON.stringify({ ...JSON.parse(await readFile(client.settings, 'utf8')), liveSync: true }));
+    const daemon = spawn(process.execPath, [cliPath, client.db, '--settings', client.settings, '--vault', client.vault, 'daemon'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+    let daemonLog = '';
+    daemon.stdout.on('data', chunk => { daemonLog += chunk; }); daemon.stderr.on('data', chunk => { daemonLog += chunk; });
+    const exists = path => access(path).then(() => true, () => false);
+    let appliedAt;
+    try {
+    await until('the device daemon to start', () => daemonLog.includes('Initial replication complete'));
+    const propose = async input => {
+      await page.getByPlaceholder('询问你的笔记').fill(`PROPOSE ${JSON.stringify(input)}`);
+      await page.getByRole('button', { name: '发送' }).click();
+      await expect(page.locator('#ask button')).toBeEnabled({ timeout: 60_000 });
+      return page.locator('.turn.assistant').last();
+    };
+    let turn = await propose({ title: '无效', summary: '', changes: [{ op: 'edit', path: '运维/紫藤服务器.md', edits: [{ old: '不存在的文字', new: 'x' }] }] });
+    await expect(turn.locator('.tools')).toContainText('提案未通过校验');
+    await expect(turn.locator('.answer')).toContainText('old text not found');
+    turn = await propose({ title: '紫藤归档', summary: '把紫藤服务器移到服务器文件夹并改名。', changes: [
+      { op: 'move', from: '运维/紫藤服务器.md', to: '运维/服务器/紫藤.md' },
+      { op: 'edit', path: '运维/索引.md', edits: [{ old: '# 索引', new: '# 运维索引' }] },
+    ] });
+    await expect(turn.locator('.tools .badge')).toHaveText('待审阅');
+    await turn.locator('.proposal-link').click();
+    await expect(page.locator('.proposal .file')).toHaveCount(2);
+    await expect(page.locator('.proposal')).toContainText('运维/紫藤服务器.md → 运维/服务器/紫藤.md');
+    await expect(page.locator('.diff .add')).toContainText(['+# 运维索引', '+- [紫藤服务器](服务器/紫藤.md)', '+- [[紫藤]]']);
+    await expect(page.getByText('请不要在其他设备上编辑这些笔记')).toBeVisible();
+    appliedAt = Date.now();
+    page.once('dialog', dialog => dialog.accept());
+    await page.getByRole('button', { name: '应用', exact: true }).click();
+    await expect(page.getByText('已应用，改动正在同步到各设备。')).toBeVisible();
+    assert.equal(db.prepare("SELECT action FROM audit_events WHERE action LIKE 'tabularius.apply'").all().length, 1);
+
+    // The other device receives the moved note with its credentials intact, without conflicts or old modification times.
+    const moved = join(client.vault, '运维/服务器/紫藤.md');
+    await until('the applied proposal to reach the other device', async () => await exists(moved) && !await exists(join(client.vault, '运维/紫藤服务器.md')));
+    assert.match(await readFile(moved, 'utf8'), /password: hunter2/);
+    await until('the index note to update', async () => (await readFile(join(client.vault, '运维/索引.md'), 'utf8')) === '# 运维索引\n\n- [紫藤服务器](服务器/紫藤.md)\n- [[紫藤]]\n');
+
+    // An edit next to a masked credential keeps the original value.
+    await page.getByRole('button', { name: '对话', exact: true }).click();
+    turn = await propose({ title: '端口格式', summary: '', changes: [{ op: 'edit', path: '运维/服务器/紫藤.md',
+      edits: [{ old: '紫藤服务器的管理端口是 8443。\n\npassword: [REDACTED]', new: '管理端口：`8443`。\n\npassword: [REDACTED]' }] }] });
+    const second = (await api(`/tabularius/vaults/${vault.id}/proposals`))[0];
+    assert.equal(second.title, '端口格式');
+    await api(`/tabularius/proposals/${second.id}/apply`, 'POST');
+    assert.match(await readFile(join(hosted, '运维/服务器/紫藤.md'), 'utf8'), /管理端口：`8443`。\n\npassword: hunter2\n/);
+
+    // A note changed after the proposal: nothing is written, and the proposal shows why.
+    turn = await propose({ title: '索引措辞', summary: '', changes: [{ op: 'edit', path: '运维/索引.md', edits: [{ old: '# 运维索引', new: '# 运维目录' }] }] });
+    const third = (await api(`/tabularius/vaults/${vault.id}/proposals`))[0];
+    await writeFile(join(client.vault, '运维/索引.md'), '# 运维索引\n\n另一台设备的修改\n');
+    await until('the edit to reach the hosted copy', async () => (await readFile(join(hosted, '运维/索引.md'), 'utf8')).includes('另一台设备'));
+    response = await call(`/tabularius/proposals/${third.id}/apply`, 'POST');
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error, 'Proposal cannot be applied');
+    assert.match(await readFile(join(hosted, '运维/索引.md'), 'utf8'), /# 运维索引/);
+    await turn.locator('.proposal-link').click();
+    await expect(page.getByText('运维/索引.md 在提案之后被修改过')).toBeVisible();
+    await page.getByRole('button', { name: '放弃' }).click();
+    await expect(page.getByText('已放弃这个提案。')).toBeVisible();
+    assert.equal((await call(`/tabularius/proposals/${third.id}/apply`, 'POST')).status, 409);
+    assert.equal((await call(`/tabularius/proposals/${third.id}`, 'GET', undefined, otherToken)).status, 404);
+    await page.getByRole('button', { name: '提案', exact: true }).click();
+    await expect(page.locator('tbody tr')).toHaveCount(3);
+    await until('the device to settle', async () => (await readFile(moved, 'utf8')).includes('管理端口：`8443`'));
+    } finally {
+      const stopped = new Promise(resolve => daemon.once('exit', resolve));
+      daemon.kill('SIGTERM');
+      await stopped;
+    }
+    // No conflicts anywhere, the old path is gone, and the moved note carries a modification time from the apply.
+    const listing = (await cli('ls')).stdout.trim().split('\n').map(line => line.split('\t'));
+    assert(listing.every(([, , , rev]) => !rev.endsWith('*')), `no conflicts:\n${listing.join('\n')}`);
+    assert(Number(listing.find(([path]) => path === '运维/服务器/紫藤.md')[2]) >= appliedAt - 1000, 'the moved note has a new modification time');
+    assert(!listing.some(([path]) => path === '运维/紫藤服务器.md'));
+    assert(!await exists(join(hosted, '运维/紫藤服务器.md')));
+
     // Restart with the other provider: the client resumes without the passphrase and the conversation continues.
     await page.close();
     await gateway.close();
@@ -163,16 +247,17 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await until('the hosted client to resume', async () => (await status()).replicated);
     const stream = await (await call(`/tabularius/conversations/${conversation.id}/messages`, 'POST', { message: '银杏节点' })).text();
     assert.match(stream, /event: tool\ndata: {"name":"search_notes"/);
-    assert.match(stream, /event: done\ndata: {"read":\["运维\/紫藤服务器.md"\]}/);
+    assert.match(stream, /event: done\ndata: {"read":\["运维\/服务器\/紫藤.md"\]}/);
     const openaiSent = mock.requests.openai.map(r => r.raw).join('\n');
     assert(openaiSent.includes('银杏节点') && !openaiSent.includes('hunter2') && !openaiSent.includes('secretdiary'));
     assert.equal(mock.requests.openai[0].body.messages[0].role, 'system');
     const transcript = await api(`/tabularius/conversations/${conversation.id}`);
-    assert.deepEqual(transcript.messages.filter(m => m.role === 'user').map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
+    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !m.text.startsWith('PROPOSE')).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
+    assert.deepEqual(transcript.messages.flatMap(m => m.tools ?? []).filter(tool => tool.proposal).map(tool => tool.proposal.status), ['applied', 'applied', 'discarded']);
 
     // Disabling removes everything the server held for this vault.
     await api(`/tabularius/vaults/${vault.id}`, 'DELETE');
-    for (const table of ['tabularius_vaults', 'tabularius_files', 'tabularius_chunks', 'tabularius_conversations', 'tabularius_messages']) {
+    for (const table of ['tabularius_vaults', 'tabularius_files', 'tabularius_chunks', 'tabularius_conversations', 'tabularius_messages', 'tabularius_proposals', 'tabularius_changes']) {
       assert.equal(db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n, 0, table);
     }
     await assert.rejects(access(join(temp, 'tabularius', vault.id)));
