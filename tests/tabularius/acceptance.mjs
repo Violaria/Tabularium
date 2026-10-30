@@ -1,7 +1,7 @@
-// Acceptance of Tabularius on a read-only copy of a real vault, with real services: the model on vLLM or OpenAI, Infinity
+// Acceptance of Tabularius on a read-only copy of a real vault, with real services: the model on vLLM, OpenAI or Anthropic, Infinity
 // embeddings, the RAGFlow MCP and, for vLLM, SearXNG. A recording proxy in front of the model checks that masked values
 // never reach it. Usage: TABULARIUS_VLLM_KEY=... node tests/tabularius/acceptance.mjs [vault], or with
-// TABULARIUS_PROVIDER=openai, TABULARIUS_MODEL and OPENAI_API_KEY; the transcript goes to test-runs/.
+// TABULARIUS_PROVIDER=openai, TABULARIUS_MODEL and OPENAI_API_KEY, or TABULARIUS_PROVIDER=anthropic and ANTHROPIC_API_KEY; the transcript goes to test-runs/.
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -13,7 +13,7 @@ import { join, relative, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createGateway } from '../../apps/server/dist/server.js';
-import { embedder, openai, vllm } from '../../apps/server/dist/tabularius/providers.js';
+import { anthropic, embedder, openai, vllm } from '../../apps/server/dist/tabularius/providers.js';
 import { ragflow } from '../../apps/server/dist/tabularius/knowledge.js';
 import { createFilter } from '../../apps/server/dist/tabularius/filter.js';
 
@@ -23,8 +23,8 @@ const cliPath = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
 const sourceVault = resolve(process.argv[2] ?? '/opt/obsidian/Commentarii');
 const env = name => { const value = process.env[name]; if (!value) throw new Error(`${name} is required`); return value; };
 const providerName = process.env.TABULARIUS_PROVIDER ?? 'vllm';
-const upstreamUrl = providerName === 'openai' ? 'https://api.openai.com' : process.env.TABULARIUS_VLLM_URL ?? 'http://127.0.0.1:8000';
-const model = process.env.TABULARIUS_MODEL ?? (providerName === 'openai' ? env('TABULARIUS_MODEL') : 'Esmeralda');
+const upstreamUrl = { openai: 'https://api.openai.com', anthropic: 'https://api.anthropic.com' }[providerName] ?? process.env.TABULARIUS_VLLM_URL ?? 'http://127.0.0.1:8000';
+const model = process.env.TABULARIUS_MODEL ?? { openai: undefined, anthropic: 'claude-opus-5-5' }[providerName] ?? (providerName === 'openai' ? env('TABULARIUS_MODEL') : 'Esmeralda');
 const embeddingUrl = process.env.TABULARIUS_EMBEDDING_URL ?? 'http://127.0.0.1:8180/v1';
 const mcpUrl = process.env.TABULARIUS_RAGFLOW_MCP_URL ?? 'http://127.0.0.1:9382/mcp';
 const datasets = (process.env.TABULARIUS_RAGFLOW_DATASETS ?? '303720b6d3af11f1b9469553e347eb9c,303a8dfad3af11f1b9469553e347eb9c').split(',');
@@ -57,8 +57,9 @@ const proxy = createServer((req, res) => {
   });
 }).listen(0, '127.0.0.1');
 await new Promise(r => proxy.once('listening', r));
-// The OpenAI SDK reads its base URL from the environment.
+// The OpenAI and Anthropic SDKs read their base URLs from the environment.
 if (providerName === 'openai') process.env.OPENAI_BASE_URL = `http://127.0.0.1:${proxy.address().port}/v1`;
+if (providerName === 'anthropic') process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${proxy.address().port}`;
 
 const runId = `tacc-${Date.now()}`;
 const temp = await mkdtemp(join(tmpdir(), 'tabularius-acceptance-'));
@@ -82,7 +83,7 @@ try {
   gateway = await createGateway({ database, bootstrapUser: 'admin', bootstrapPassword: password, origins: [],
     couch: { url: couchUrl, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword: randomBytes(24).toString('hex') },
     tabularius: { key: randomBytes(32), root: join(temp, 'tabularius'), cli: cliPath,
-      provider: providerName === 'openai' ? openai(model) : vllm(model, `http://127.0.0.1:${proxy.address().port}/v1`, env('TABULARIUS_VLLM_KEY'), 65_536),
+      provider: providerName === 'openai' ? openai(model) : providerName === 'anthropic' ? anthropic(model) : vllm(model, `http://127.0.0.1:${proxy.address().port}/v1`, env('TABULARIUS_VLLM_KEY'), 65_536),
       embedder: embedder('bge-m3', embeddingUrl, undefined, 32), knowledge: ragflow(mcpUrl, datasets),
       web: { options: { allowed: [], blocked: [], maxUses: 5 }, searxng: providerName === 'vllm' ? searxng : undefined, intranet: [] }, modeLimit: 'read-only', params: {} } });
   const url = await gateway.listen();
