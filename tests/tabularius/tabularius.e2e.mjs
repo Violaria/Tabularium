@@ -10,6 +10,8 @@ import { randomBytes } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
+import { createServer } from 'node:net';
+import { once } from 'node:events';
 import { createGateway } from '../../apps/server/dist/server.js';
 import { anthropic, embedder, openai, vllm } from '../../apps/server/dist/tabularius/providers.js';
 import { ragflow } from '../../apps/server/dist/tabularius/knowledge.js';
@@ -54,6 +56,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
   };
   try {
     await compose('up', '-d', '--wait');
+    await exec('docker', ['build', '-q', '-t', 'tabularius-test-sshd', join(root, 'tests/tabularius/sshd')], { timeout: 300_000 });
     couchUrl = `http://${(await compose('port', 'couchdb', '5984')).stdout.trim()}`;
     let url = await start(anthropic('claude-opus-5-5'));
     let token;
@@ -321,6 +324,74 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.match(lastClaude.headers['anthropic-beta'], /compact-2026-01-12/);
     await api(`/tabularius/conversations/${freshId}`, 'DELETE');
 
+    // SSH: a host registered by an administrator, with its own key and a pinned host key; commands checked by mode.
+    assert.equal((await call('/tabularius/hosts', 'GET', undefined, otherToken)).status, 403);
+    const sshd = `${runId}-sshd`;
+    // A fixed host port, so the container keeps it across the restart below.
+    const free = createServer().listen(0, '127.0.0.1');
+    await once(free, 'listening');
+    const sshPort = free.address().port;
+    free.close(); await once(free, 'close');
+    await exec('docker', ['run', '-d', '--name', sshd, '-p', `127.0.0.1:${sshPort}:2222`, '-e', 'AUTHORIZED_KEY=', 'tabularius-test-sshd']);
+    try {
+      const host = await api('/tabularius/hosts', 'POST', { name: 'test', address: '127.0.0.1', port: sshPort, username: 'tab', policy: 'allowed', commands: '' });
+      assert.match(host.publicKey, /^ssh-ed25519 /);
+      assert.equal((await call(`/tabularius/hosts/${host.id}/check`, 'POST')).status, 502, 'the key is not installed yet');
+      await exec('docker', ['exec', sshd, 'sh', '-c', `printf '%s\\n' '${host.publicKey}' > /home/tab/.ssh/authorized_keys`]);
+      assert.match((await until('sshd to accept the key', async () => {
+        const response = await call(`/tabularius/hosts/${host.id}/check`, 'POST');
+        return response.ok && response.json();
+      }, 30_000)).fingerprint, /^SHA256:/);
+      const sshAsk = async text => (await ask(text)).answer;
+      // Restricted mode: read-only commands and the allow list; output masked before it reaches the provider.
+      assert.match(await sshAsk('SSH test cat /home/tab/app.env'), /Exit code: 0[\s\S]*host: db.local\npassword: \[REDACTED\]/);
+      assert(!mock.requests.anthropic.map(r => r.raw).join('').includes('hunter9'), 'the credential in the output was masked');
+      assert.match(await sshAsk('SSH test cat a; rm b'), /refused: shell operators/);
+      assert.match(await sshAsk('SSH test touch /tmp/made'), /not in this host's allow list/);
+      await api(`/tabularius/hosts/${host.id}`, 'PUT', { policy: 'allowed', commands: 'touch /tmp/*' });
+      assert.match(await sshAsk('SSH test touch /tmp/made'), /Exit code: 0/);
+      await exec('docker', ['exec', sshd, 'test', '-f', '/tmp/made']);
+      // Read-only mode refuses the same command.
+      await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'read-only' });
+      assert.match(await sshAsk('SSH test touch /tmp/other'), /only read-only commands/);
+      await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'restricted' });
+      // A host that asks first: the command waits for the user's decision in the page's stream.
+      await api(`/tabularius/hosts/${host.id}`, 'PUT', { policy: 'authorize', commands: 'touch /tmp/*' });
+      const decided = async (text, approved) => {
+        const response = await call(`/tabularius/conversations/${conversation.id}/messages`, 'POST', { message: text });
+        const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+        let stream = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          stream += value;
+          const waiting = /event: approval\ndata: ({"id":"[^"]+","host":"test","command":"[^"]+"})\n/.exec(stream);
+          if (waiting && !stream.includes('"approved"')) {
+            assert.equal((await call(`/tabularius/approvals/${JSON.parse(waiting[1]).id}`, 'POST', { approved }, otherToken)).status, 404, 'only the asking user decides');
+            await api(`/tabularius/approvals/${JSON.parse(waiting[1]).id}`, 'POST', { approved });
+          }
+        }
+        return (await api(`/tabularius/conversations/${conversation.id}`)).messages.at(-1).text;
+      };
+      assert.match(await decided('SSH test touch /tmp/approved', true), /Exit code: 0/);
+      await exec('docker', ['exec', sshd, 'test', '-f', '/tmp/approved']);
+      assert.match(await decided('SSH test touch /tmp/denied', false), /did not approve/);
+      await assert.rejects(exec('docker', ['exec', sshd, 'test', '-f', '/tmp/denied']));
+      // Forbidden hosts are never connected; a changed host key stops every command.
+      await api(`/tabularius/hosts/${host.id}`, 'PUT', { policy: 'forbidden', commands: '' });
+      assert.match(await sshAsk('SSH test uptime'), /forbidden host/);
+      await api(`/tabularius/hosts/${host.id}`, 'PUT', { policy: 'allowed', commands: '' });
+      await exec('docker', ['exec', sshd, 'sh', '-c', 'rm /etc/ssh/ssh_host_* && ssh-keygen -A']);
+      await exec('docker', ['restart', sshd]);
+      assert.match(await until('sshd to restart', async () => { const a = await sshAsk('SSH test uptime'); return !/ECONNREFUSED|ECONNRESET/.test(a) && a; }, 30_000), /does not match the recorded/);
+      const record = await api('/tabularius/commands');
+      assert.deepEqual([...new Set(record.map(c => c.status))].sort(), ['denied', 'done', 'failed', 'refused']);
+      assert(record.some(c => c.command === 'touch /tmp/approved' && c.status === 'done'));
+      assert(db.prepare("SELECT count(*) AS n FROM audit_events WHERE action='tabularius.ssh'").get().n >= 8);
+    } finally {
+      await exec('docker', ['rm', '-f', sshd]).catch(() => {});
+    }
+
     // Restart with the other provider: the client resumes without the passphrase and the conversation continues.
     await page.close();
     await gateway.close();
@@ -369,7 +440,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.match((await ask('WEB 版本')).answer, /address this mode does not allow/);
     assert.equal(mock.requests.page.length, 1);
     const transcript = await api(`/tabularius/conversations/${conversation.id}`);
-    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|REMEMBER) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
+    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|REMEMBER|SSH) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
     assert.deepEqual(transcript.messages.flatMap(m => m.tools ?? []).filter(tool => tool.proposal).map(tool => tool.proposal.status), ['applied', 'applied', 'discarded']);
 
     // Disabling removes everything the server held for this vault.

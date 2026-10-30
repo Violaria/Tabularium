@@ -22,6 +22,11 @@ function plan(results, question) {
   if (question.startsWith('PROPOSE ')) return results.length ? { text: results[0] } : { tool: 'propose_changes', input: JSON.parse(question.slice(8)) };
   // "KB <question>" searches the knowledge base and repeats what came back.
   if (question.startsWith('KB ')) return results.length ? { text: results[0] } : { tool: 'search_knowledge_base', input: { question: question.slice(3) } };
+  // "SSH <host> <command>" runs a command over SSH and repeats the result.
+  if (question.startsWith('SSH ')) {
+    const [, host, ...command] = question.split(' ');
+    return results.length ? { text: results[0] } : { tool: 'run_command', input: { host, command: command.join(' ') } };
+  }
   // "REMEMBER <fact>" stores a memory; "RECALL <words>" searches earlier conversations and reads the first one found.
   if (question.startsWith('REMEMBER ')) return results.length ? { text: results[0] } : { tool: 'add_memory', input: { content: question.slice(9) } };
   if (question.startsWith('RECALL ')) {
