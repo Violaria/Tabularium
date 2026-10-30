@@ -1,6 +1,6 @@
 {
   "name": "tabularium",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -30,6 +30,7 @@
     "release": "node deploy/release/build.ts",
     "test:release": "npm run build:notes && npm run build:cli && node tests/release/clean-install.mjs",
     "test:epub": "cd apps/obsidian && node node_modules/tsx/dist/cli.mjs --tsconfig tsconfig.json ../../tests/kindle/epub-check.ts",
+    "accept:tabularius": "npm run build:server && node tests/tabularius/acceptance.mjs",
     "rehearse:migration": "node tests/release/migration-rehearsal.mjs",
     "test:backup": "npm run build:notes && npm run build:cli && node --test --test-concurrency=1 tests/backup/*.test.mjs",
     "test:backup:clients": "npm run build:notes && npm run build:cli && node tests/backup/clients.mjs",

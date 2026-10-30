@@ -454,6 +454,15 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert(!JSON.stringify(vllmLast.messages).includes('"紫藤服务器"'), 'the first question was left out');
     assert(!JSON.stringify(vllmLast.messages).includes('blocked.example.org'), 'search results outside the domain rules are dropped');
     assert.equal(mock.requests.page.length, 1);
+    // An answer from the search results alone lists the results it links to as sources.
+    const snippet = await ask('SNIPPET 版本');
+    assert.match(snippet.stream, /"sources":\[{"url":"http:\/\/127.0.0.1:\d+\/page","title":"发布说明"}\]/);
+    assert.equal(mock.requests.page.length, 1);
+    // At the tool limit the model answers without tools instead of stopping with nothing.
+    const vllmBefore = mock.requests.vllm.length;
+    assert.equal((await ask('LOOP 紫藤')).answer, '搜索了 8 次');
+    assert.deepEqual(mock.requests.vllm.slice(vllmBefore).map(r => r.body.tool_choice ?? 'auto'), [...Array(8).fill('auto'), 'none']);
+    assert.deepEqual(mock.requests.vllm.at(-1).body.messages.at(-1), { role: 'user', content: 'The tool limit for this answer is reached. Answer now with what you have found, without calling tools.' });
     // A URL the conversation never showed is refused, so note content cannot be smuggled out in a query string.
     assert.match((await ask('WEBLEAK 版本')).answer, /only URLs that appeared in the conversation/);
     assert.equal(mock.requests.page.length, 1);
@@ -462,7 +471,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.match((await ask('WEB 版本')).answer, /address this mode does not allow/);
     assert.equal(mock.requests.page.length, 1);
     const transcript = await api(`/tabularius/conversations/${conversation.id}`);
-    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|REMEMBER|SSH|SANDBOX) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
+    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|SNIPPET|LOOP|REMEMBER|SSH|SANDBOX) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
     assert.deepEqual(transcript.messages.flatMap(m => m.tools ?? []).filter(tool => tool.proposal).map(tool => tool.proposal.status), ['applied', 'applied', 'discarded']);
 
     // Disabling removes everything the server held for this vault.

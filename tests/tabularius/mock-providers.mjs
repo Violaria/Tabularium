@@ -1,7 +1,7 @@
 // Stand-ins for the Anthropic Messages API (with server-side web search), the OpenAI Responses API, vLLM's Chat Completions,
 // OpenAI-shaped embeddings, RAGFlow's MCP server, SearXNG and one web page, enough for the official SDKs.
 // The model is scripted: search for the user's question, read the first note found, then answer citing it with a quote;
-// "PROPOSE <json>", "KB <question>", "WEB <question>" and "WEBLEAK <question>" run other scripts (see plan()).
+// "PROPOSE <json>", "KB <question>", "WEB <question>", "WEBLEAK <question>" and the others run other scripts (see plan()).
 // Every request body is kept so tests can check what would have left the server.
 import { createServer } from 'node:http';
 import { once } from 'node:events';
@@ -17,7 +17,11 @@ const lastUserText = messages => {
 };
 
 /** The next step of the script, from the tool results so far in the current question. */
-function plan(results, question) {
+function plan(results, question, final = false) {
+  // "LOOP <question>" searches the notes for as long as tools are offered, then counts the searches.
+  if (question.startsWith('LOOP ')) return final ? { text: `搜索了 ${results.length} 次` } : { tool: 'search_notes', input: { query: question.slice(5) } };
+  // "SNIPPET <question>" answers from the search results alone, linking the first one.
+  if (question.startsWith('SNIPPET ')) return results.length ? { text: `见 ${/https?:\/\/\S+/.exec(results[0])[0]}` } : { tool: 'web_search', input: { query: question.slice(8) } };
   // "PROPOSE <json>" makes the model call propose_changes with that input, then repeat the tool's answer.
   if (question.startsWith('PROPOSE ')) return results.length ? { text: results[0] } : { tool: 'propose_changes', input: JSON.parse(question.slice(8)) };
   // "KB <question>" searches the knowledge base and repeats what came back.
@@ -164,11 +168,13 @@ export async function startMockProviders() {
     if (path === '/v1/chat/completions') {
       requests.vllm.push({ headers: req.headers, body, raw });
       const results = [];
-      for (const message of [...body.messages].reverse()) {
+      // The final round's instruction to answer is not one of the user's questions.
+      const messages = body.tool_choice === 'none' ? body.messages.slice(0, -1) : body.messages;
+      for (const message of [...messages].reverse()) {
         if (message.role !== 'tool') { if (message.role === 'user') break; continue; }
         results.unshift(message.content);
       }
-      const step = plan(results, lastUserText(body.messages));
+      const step = plan(results, lastUserText(messages), body.tool_choice === 'none');
       const n = requests.vllm.length;
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       const chunk = (delta, finish = null) => res.write(`data: ${JSON.stringify({ id: `c${n}`, object: 'chat.completion.chunk', created: 0, model: body.model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
