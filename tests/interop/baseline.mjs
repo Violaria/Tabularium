@@ -417,6 +417,7 @@ try {
   }
   if (gateway) await scenario('plugin-login', () => pluginScript('plugin-login', 'obsidian-user'));
   if (gateway) await scenario('send-to-kindle', () => pluginScript('send-to-kindle', 'kindle-user'));
+  if (gateway) await scenario('share-from-obsidian', () => pluginScript('share-from-obsidian', 'share-user'));
   await scenario('desktop-obsidian', async () => {
     if (gateway) { await runGatewayDesktop(false); return; }
     const app = join(root, 'apps/obsidian');

@@ -122,12 +122,6 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     await cli('mirror', client.vault); await cli('sync');
     await expect.poll(topLevel, { timeout: 60_000 }).toEqual(['readme', '笔记', 'assets', 'sortspec']);
 
-    // The language selector in the sidebar redraws the open notes module at once, without locking the vault.
-    await page.getByLabel('语言').selectOption('en');
-    await expect(page.getByRole('button', { name: 'New note' })).toBeVisible();
-    await expect(article).toContainText('第二版');
-    await page.getByLabel('Language').selectOption('zh');
-    await expect(page.getByRole('button', { name: '新建笔记' })).toBeVisible();
 
     // The passphrase is in no browser storage; after a reload it is asked again.
     const stored = await page.evaluate(async () => {

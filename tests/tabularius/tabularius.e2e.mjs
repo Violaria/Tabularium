@@ -118,7 +118,13 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await page.getByLabel('用户名').fill('admin');
     await page.getByLabel('密码').fill(userPassword);
     await page.getByRole('button', { name: '登录' }).click();
-    await expect(page.getByText('已同步')).toBeVisible({ timeout: 30_000 });
+    // A new conversation: the input in the middle of the page, the client's state in the top-right corner.
+    await expect(page.locator('.sync-pill.ok')).toContainText('已同步', { timeout: 30_000 });
+    await expect(page.locator('.sync-pill')).toContainText('已索引');
+    await expect(page.locator('.chat-start .composer')).toBeVisible();
+    await expect(page.locator('.chat-title')).toHaveText('');
+    const shots = resolve('test-runs', `tabularius-${Date.now()}`); await mkdir(shots, { recursive: true });
+    await page.screenshot({ path: join(shots, 'start.png') });
     await page.getByPlaceholder('询问你的笔记').fill('紫藤服务器');
     await page.getByRole('button', { name: '发送' }).click();
     const answer = page.locator('.turn.assistant').last();
@@ -128,6 +134,8 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     const href = `/notes/?vault=${vault.id}&path=${encodeURIComponent('运维/紫藤服务器.md')}`;
     await expect(answer.locator('.answer a.cite')).toHaveAttribute('href', href);
     await expect(page.locator('.conversation')).toHaveCount(1);
+    await expect(page.locator('.chat-bottom .composer')).toBeVisible();
+    await page.screenshot({ path: join(shots, 'chat.png') });
     // A second question in the same conversation.
     await page.getByPlaceholder('询问你的笔记').fill('管理端口');
     await page.getByRole('button', { name: '发送' }).click();
