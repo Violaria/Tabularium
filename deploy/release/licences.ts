@@ -3,12 +3,15 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 interface LockEntry { version?: string; license?: string; licenses?: { type: string }[]; dev?: boolean; devOptional?: boolean; resolved?: string }
-// Packages of the plug-in workspace itself, covered by the Self-hosted LiveSync MIT licence or the project's licence decision.
+// Packages of the plug-in workspace itself, covered by the Self-hosted LiveSync MIT licence or the project's licence decision,
+// and dependencies whose package metadata omits a licence their files state.
 const known: Record<string, string> = {
   '@tabularium/custom-sort': 'MIT',
   'livesync-webapp': 'MIT',
   'self-hosted-livesync-cli': 'MIT',
   'webpeer': 'MIT',
+  // A Mermaid dependency whose package.json names no licence; its licence file is MIT.
+  'khroma': 'MIT',
 };
 
 /** Licence list for the plug-in's production dependencies and the runtime images; fails on an unidentified licence. */
