@@ -44,7 +44,8 @@ export async function upgrade(options: DeploymentOptions & { image: string }) {
   } catch (error) {
     report.trial = { ok: false, error: failure(error) };
   } finally {
-    await docker(['compose', '-p', trialProject, 'down', '-v']);
+    // Each step on its own: a failed one must not leave the trial's copy of the environment file behind.
+    await docker(['compose', '-p', trialProject, 'down', '-v']).catch(() => {});
     for (const volume of [`${trialProject}_application`, `${trialProject}_notes`]) await docker(['volume', 'rm', volume]).catch(() => {});
     await rm(trialTarget, { recursive: true, force: true });
   }

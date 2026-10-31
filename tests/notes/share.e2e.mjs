@@ -147,7 +147,7 @@ test('sharing notes and folders from web notes', { timeout: 600_000 }, async () 
 
     // A folder with a password: the visitor is asked for it, and a wrong one is refused.
     dialog = await menu('笔记');
-    await dialog.getByLabel('访问密码（可选）').fill('pass-123');
+    await dialog.getByLabel('访问密码', { exact: true }).fill('pass-123');
     await dialog.getByRole('button', { name: '创建链接' }).click();
     await expect(linkField).toHaveValue(/#/, { timeout: 60_000 });
     const folderLink = await linkField.inputValue();

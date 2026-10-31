@@ -2,11 +2,13 @@ import { parseArgs } from 'node:util';
 import { backup, verify } from './archive.ts';
 import { restore } from './restore.ts';
 import { rollback, upgrade } from './upgrade.ts';
+import { restoreScheduled } from './scheduled.ts';
 
 const usage = `Usage:
   node deploy/backup/cli.ts backup   --compose <file>... --env-file <file> --project <name> --output <dir>
   node deploy/backup/cli.ts verify   <backup-dir>
   node deploy/backup/cli.ts restore  <backup-dir> --project <name> --target <dir> --port <port>
+  node deploy/backup/cli.ts restore-scheduled <backups-dir> <point-id> --image <image> --compose <file>... --env-file <file> --project <name> --target <dir> --port <port>
   node deploy/backup/cli.ts upgrade  --image <image> --compose <file>... --env-file <file> --project <name> --output <dir>
   node deploy/backup/cli.ts rollback <backup-dir> --compose <file>... --env-file <file> --project <name> --output <dir>`;
 const [command, ...rest] = process.argv.slice(2);
@@ -34,6 +36,9 @@ try {
     print({ ok: true, path, id: manifest.id, files: manifest.files.length });
   } else if (command === 'restore' && positionals.length === 1) {
     print((await restore(positionals[0], { project: need('project'), target: need('target'), port: need('port') })).report);
+  } else if (command === 'restore-scheduled' && positionals.length === 2) {
+    print(await restoreScheduled(positionals[0], positionals[1], { compose: composeFiles(), envFile: need('env-file'), project: need('project'),
+      target: need('target'), port: need('port'), image: need('image') }));
   } else if (command === 'upgrade' && positionals.length === 0) {
     const report = await upgrade({ ...deployment(), image: need('image') });
     print(report);

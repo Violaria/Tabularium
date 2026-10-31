@@ -13,7 +13,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { createGateway } from '../../apps/server/dist/server.js';
-import { embedder } from '../../apps/server/dist/tabularius/providers.js';
 import { serveSandbox } from '../../apps/server/dist/sandbox.js';
 import { startMockProviders } from './mock-providers.mjs';
 
@@ -40,9 +39,9 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     env: { ...process.env, BASELINE_PASSWORD: password }, timeout: 90_000,
   });
   const mock = await startMockProviders();
-  // The sandbox service against this host's Docker, with the one image the tests have locally.
+  // The sandbox service against this host's Docker; the server offers the one image the tests have locally (the limits below).
   const sandboxToken = randomBytes(24).toString('hex');
-  const sandbox = await serveSandbox({ socket: '/var/run/docker.sock', images: ['alpine:3'], token: sandboxToken, port: 0, host: '127.0.0.1' });
+  const sandbox = await serveSandbox({ socket: '/var/run/docker.sock', token: sandboxToken, port: 0, host: '127.0.0.1' });
   // The SDKs reach the stand-ins through their base URLs; the keys come from the AI settings, not the environment.
   process.env.ANTHROPIC_BASE_URL = mock.url; delete process.env.ANTHROPIC_API_KEY;
   process.env.OPENAI_BASE_URL = `${mock.url}/v1`; delete process.env.OPENAI_API_KEY;
@@ -50,19 +49,20 @@ test('Tabularius', { timeout: 900_000 }, async () => {
   const key = randomBytes(32);
   let gateway, browser, couchUrl;
   const syncPassword = randomBytes(24).toString('hex');
-  // What the environment would configure, imported on the first start only; later starts keep the web settings.
+  // What the environment would configure, imported on the first start only; later starts keep the web settings, and
+  // changes go through the settings API. The default model becomes the default recipe.
   const initial = {
     providers: { anthropic: { key: 'test-anthropic', models: ['claude-opus-5-5'] }, openai: { key: 'test-openai', models: ['gpt-test'] },
-      vllm: { url: `${mock.url}/v1`, models: ['esmeralda'], context: 6000 } },
+      vllm: { url: `${mock.url}/vllm/v1`, models: ['esmeralda'], context: 6000 } },
     defaultModel: 'anthropic/claude-opus-5-5', knowledge: { url: `${mock.url}/mcp`, datasets: ['ds-ops', 'ds-notes'] },
+    embedding: { url: `${mock.url}/embedding/v1`, key: 'test-embed-key', model: 'test-embed', batch: 4 },
+    web: { enabled: true, searxng: mock.url, allowed: [], blocked: [], maxUses: 3, intranet: ['127.0.0.1'] },
+    limits: { modeLimit: 'restricted', sandboxImages: ['alpine:3'] },
   };
-  const start = async (embeddingModel = 'test-embed', blocked = []) => {
+  const start = async () => {
     gateway = await createGateway({ database, bootstrapUser: 'admin', bootstrapPassword: password, origins: [],
       couch: { url: couchUrl, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword },
-      tabularius: { key, root: join(temp, 'tabularius'), cli: cliPath, initial,
-        embedder: embedder(embeddingModel, `${mock.url}/v1`, 'test-embed-key', 4),
-        web: { options: { allowed: [], blocked, maxUses: 3 }, searxng: mock.url, intranet: ['127.0.0.1'] }, modeLimit: 'restricted',
-        sandbox: { url: `http://127.0.0.1:${sandbox.port}`, token: sandboxToken, images: ['alpine:3'] } } });
+      tabularius: { key, root: join(temp, 'tabularius'), cli: cliPath, initial, sandbox: { url: `http://127.0.0.1:${sandbox.port}`, token: sandboxToken } } });
     return gateway.listen();
   };
   try {
@@ -156,9 +156,15 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await expect(page.locator('.turn.assistant').last().locator('.answer')).toContainText('根据', { timeout: 60_000 });
     await expect(page.locator('.conversation')).toHaveCount(1);
 
-    // The conversation's model and settings in its header; parameters as a form, not JSON.
-    await expect(page.locator('#chat-model')).toHaveValue('anthropic/claude-opus-5-5');
-    assert.deepEqual(await page.locator('#chat-model option').allTextContents(), ['Anthropic · claude-opus-5-5', 'OpenAI · gpt-test', 'vLLM · esmeralda']);
+    // The first start made the default model the default recipe, named after it; the overview lists recipes, not models.
+    const overview = await api('/tabularius');
+    const [claude] = overview.recipes;
+    assert.deepEqual([overview.recipes.length, claude.name, claude.model, claude.provider, claude.params, overview.defaultRecipe],
+      [1, 'Claude Opus 5 5', 'anthropic/claude-opus-5-5', 'anthropic', {}, claude.id]);
+    assert(!('models' in overview) && !('defaultModel' in overview) && !('serverParams' in overview));
+    // The conversation's recipe and settings in its header; parameters as a form, not JSON.
+    await expect(page.locator('#chat-recipe')).toHaveValue(claude.id);
+    assert.deepEqual(await page.locator('#chat-recipe option').allTextContents(), ['Claude Opus 5 5']);
     await page.getByRole('button', { name: '对话设置' }).click();
     const settingsDialog = page.locator('dialog.chat-settings');
     const effort = settingsDialog.locator('[data-param="effort"]');
@@ -167,29 +173,51 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await expect(effort.locator('select')).toHaveValue('medium');
     await page.screenshot({ path: join(shots, 'chat-settings.png') });
     await settingsDialog.getByRole('button', { name: '取消' }).click();
-    // AI settings for administrators: keys shown by their last four characters.
+    // LLM settings for administrators: providers with the models their APIs list, keys shown by their last four characters, then recipes.
     await page.goto(`${url}/admin/ai`);
     await expect(page.locator('form.provider')).toHaveCount(3);
     await expect(page.locator('form.provider[data-provider="anthropic"] input[name="key"]')).toHaveAttribute('placeholder', /opic/);
-    await expect(page.locator('#default-model')).toHaveValue('anthropic/claude-opus-5-5');
+    await expect(page.locator('form.provider[data-provider="anthropic"] [data-models]')).toContainText('Claude Opus 5.5');
+    await expect(page.locator('form.provider[data-provider="openai"] input[name="model"]')).toHaveCount(1);
+    await expect(page.locator('form.provider[data-provider="vllm"] input[name="model"]:checked')).toHaveValue('esmeralda');
+    const recipeItems = page.locator('#recipes details.llm-recipe');
+    await expect(recipeItems).toHaveCount(1);
+    await expect(recipeItems.first().locator('summary')).toContainText('默认');
+    // A new recipe for vLLM: a name, the model, a prompt, and the temperature set by its slider's number box.
+    await page.locator('#add-recipe').click();
+    const added = recipeItems.last();
+    await added.locator('input[name="name"]').fill('运维 vLLM');
+    await added.locator('select[name="model"]').selectOption('vllm/esmeralda');
+    await added.locator('textarea[name="prompt"]').fill('回答要简短。');
+    const temperature = added.locator('[data-param="temperature"]');
+    await temperature.getByRole('button', { name: /默认/ }).click();
+    await temperature.locator('input[type="number"]').fill('5');
+    await added.getByRole('button', { name: '保存', exact: true }).click();
+    await expect(page.locator('.toast.error')).toContainText('取值范围为 0 到 2');
+    await temperature.locator('input[type="number"]').fill('0.3');
+    await added.getByRole('button', { name: '保存', exact: true }).click();
+    await expect(page.locator('.toast', { hasText: '已保存' })).toBeVisible();
+    await expect(recipeItems).toHaveCount(2);
+    const esmeralda = (await api('/tabularius/settings')).recipes.find(recipe => recipe.name === '运维 vLLM');
+    assert.deepEqual([esmeralda.model, esmeralda.params, esmeralda.prompt], ['vllm/esmeralda', { temperature: 0.3 }, '回答要简短。']);
+    assert.equal((await api('/tabularius')).defaultRecipe, claude.id, 'a further recipe leaves the default alone');
     await page.screenshot({ path: join(shots, 'ai-settings.png'), fullPage: true });
-    // The vault's settings: prompt, default model and the parameter form, with the vLLM temperature set by its slider.
+    // The vault's settings: prompt and the vault's recipe; per-vault models and parameters are gone.
     await page.goto(`${url}/tabularius/?vault=${vault.id}`);
     await page.getByRole('button', { name: '设置', exact: true }).click();
     await expect(page.locator('#vault-prompt textarea')).toHaveValue(/本库的规范/);
-    await page.locator('details.param-provider', { hasText: 'vllm' }).locator('summary').click();
-    const temperature = page.locator('[data-params="vllm"] [data-param="temperature"]');
-    await temperature.getByRole('button', { name: /默认/ }).click();
-    await temperature.locator('input[type="number"]').fill('5');
-    await page.locator('#save-params').click();
-    await expect(page.locator('.toast.error')).toContainText('取值范围为 0 到 2');
-    await temperature.locator('input[type="number"]').fill('0.3');
-    await page.locator('#save-params').click();
-    await expect(page.locator('.toast', { hasText: '已保存' })).toBeVisible();
-    assert.deepEqual((await status()).params.vllm, { temperature: 0.3 });
+    await page.locator('#vault-recipe').selectOption(esmeralda.id);
+    await until('the vault recipe to be saved', async () => (await status()).recipe === esmeralda.id);
     await page.screenshot({ path: join(shots, 'vault-settings.png'), fullPage: true });
+    await expect(page.locator('#vault-recipe')).toHaveValue(esmeralda.id);
+    await page.locator('#vault-recipe').selectOption('');
+    await until('the vault to follow the server again', async () => (await status()).recipe === null);
+    assert.equal((await call(`/tabularius/vaults/${vault.id}/recipe`, 'PUT', { recipe: 'none' })).status, 400);
+    assert.equal((await call(`/tabularius/vaults/${vault.id}/model`, 'PUT', { model: 'vllm/esmeralda' })).status, 404);
+    assert.equal((await call(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: {} })).status, 404);
     await page.locator('.conversation').first().click();
     await expect(page.locator('#log .turn.user').first()).toBeVisible();
+    await expect(page.locator('#chat-recipe option')).toHaveText(['Claude Opus 5 5', '运维 vLLM']);
     // What reached the provider: no excluded note, no credentials, the vault's rules, and thinking replayed unchanged.
     const sent = [...mock.requests.anthropic.map(r => r.raw), ...mock.requests.embeddings.map(r => r.raw)].join('\n');
     for (const secret of ['secretdiary', '私密日记', 'hunter2', 'sk-abcdefghijklmnop', 'ZETA-42']) assert(!sent.includes(secret), `${secret} reached a provider`);
@@ -337,15 +365,26 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.equal(mock.requests.mcp.filter(r => r.body.method === 'initialize').length, 2);
     for (const secret of ['kbsecret123', 'kbdiary']) assert(!mock.requests.anthropic.map(r => r.raw).join('\n').includes(secret), `${secret} reached a provider`);
 
-    // Permission modes: restricted and full are for administrators, up to the server's limit; parameters are checked per provider.
+    // Permission modes: restricted and full are for administrators, up to the server's limit.
     assert.equal((await call(`/tabularius/vaults/${otherVault.id}/mode`, 'PUT', { mode: 'restricted' }, otherToken)).status, 403);
     assert.equal((await call(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'full' })).status, 400);
     assert.equal((await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'restricted' })).mode, 'restricted');
     assert.deepEqual((await api('/tabularius')).modes, ['read-only', 'restricted']);
     assert.deepEqual((await api('/tabularius', 'GET', undefined, otherToken)).modes, ['read-only']);
-    assert.equal((await call(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: { anthropic: { temperature: 0.5 } } })).status, 400, 'Claude takes no sampling parameters');
-    assert.equal((await call(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: { vllm: { messages: [] } } })).status, 400, 'reserved fields cannot be custom parameters');
-    await api(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: { anthropic: { effort: 'high' }, vllm: { temperature: 0.3, enable_thinking: false, min_tokens: 2 } } });
+    // Parameters are checked per provider, inside recipes and as a conversation's adjustments.
+    const badRecipe = (model, params) => ({ recipes: [{ name: '无效', model, params, prompt: '' }] });
+    assert.equal((await call('/tabularius/settings', 'PUT', badRecipe('anthropic/claude-opus-5-5', { temperature: 0.5 }))).status, 400, 'Claude takes no sampling parameters');
+    assert.equal((await call('/tabularius/settings', 'PUT', badRecipe('vllm/esmeralda', { messages: [] }))).status, 400, 'reserved fields cannot be custom parameters');
+    assert.equal((await call(`/tabularius/conversations/${conversation.id}`, 'PATCH', { params: { anthropic: { temperature: 0.5 } } })).status, 400);
+    assert.equal((await call(`/tabularius/conversations/${conversation.id}`, 'PATCH', { params: { vllm: { messages: [] } } })).status, 400);
+    assert.equal((await api('/tabularius/settings')).recipes.length, 2, 'a refused list leaves the recipes alone');
+    // The vLLM recipe gets its full parameters, and an OpenAI recipe joins; the conversation adjusts Claude's effort.
+    const recipes = (await api('/tabularius/settings', 'PUT', { recipes: [
+      ...(await api('/tabularius/settings')).recipes.map(recipe => recipe.id === esmeralda.id ? { ...recipe, params: { temperature: 0.3, enable_thinking: false, min_tokens: 2 } } : recipe),
+      { name: 'GPT 测试', model: 'openai/gpt-test', params: {}, prompt: '' }] })).recipes;
+    const recipeId = name => recipes.find(recipe => recipe.name === name).id;
+    assert.deepEqual(recipes.map(recipe => recipe.name), ['Claude Opus 5 5', '运维 vLLM', 'GPT 测试']);
+    assert.deepEqual((await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { params: { anthropic: { effort: 'high' } } })).params, { anthropic: { effort: 'high' } });
 
     // The web with Claude: server-side search, a paused turn continued unchanged, cited sources and an activity record.
     assert(mock.requests.anthropic.every(r => !r.body.tools.some(tool => tool.type?.startsWith('web_'))), 'no web tools while the web is off');
@@ -363,7 +402,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     const shown = (await api(`/tabularius/conversations/${conversation.id}`)).messages.at(-1);
     assert.deepEqual(shown.sources, [{ url: 'https://example.com/release', title: 'Release notes' }]);
     assert.equal(shown.text, '最新版本是 2.0。');
-    await api(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: { vllm: { temperature: 0.3, enable_thinking: false, min_tokens: 2 } } });
+    assert.deepEqual((await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { params: {} })).params, {}, 'the adjustment is withdrawn');
 
     // Memories: Tabularius stores one when asked, a new conversation starts with it, and only its owner can see or change it.
     assert.match((await ask('REMEMBER 回答用繁体中文')).answer, /Remembered as/);
@@ -408,6 +447,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
       const sshAsk = async text => (await ask(text)).answer;
       // Restricted mode: read-only commands and the allow list; output masked before it reaches the provider.
       assert.match(await sshAsk('SSH test cat /home/tab/app.env'), /Exit code: 0[\s\S]*host: db.local\npassword: \[REDACTED\]/);
+      assert(mock.requests.anthropic.at(-1).body.tools.some(tool => tool.name === 'run_command'), "SSH is offered in an administrator's vault");
       assert(!mock.requests.anthropic.map(r => r.raw).join('').includes('hunter9'), 'the credential in the output was masked');
       assert.match(await sshAsk('SSH test cat a; rm b'), /refused: shell operators/);
       assert.match(await sshAsk('SSH test touch /tmp/made'), /not in this host's allow list/);
@@ -418,6 +458,15 @@ test('Tabularius', { timeout: 900_000 }, async () => {
       await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'read-only' });
       assert.match(await sshAsk('SSH test touch /tmp/other'), /only read-only commands/);
       await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'restricted' });
+      // A lower server limit caps the vault's mode at once, without changing what the vault chose.
+      const limits = (await api('/tabularius/settings')).limits;
+      assert.deepEqual(limits, { modeLimit: 'restricted', sshTimeout: 60, sandboxImages: ['alpine:3'] });
+      await api('/tabularius/settings', 'PUT', { limits: { ...limits, modeLimit: 'read-only' } });
+      assert.equal((await status()).mode, 'read-only');
+      assert.deepEqual((await api('/tabularius')).modes, ['read-only']);
+      assert.match(await sshAsk('SSH test touch /tmp/other'), /only read-only commands/);
+      await api('/tabularius/settings', 'PUT', { limits });
+      assert.equal((await status()).mode, 'restricted');
       // A host that asks first: the command waits for the user's decision in the page's stream.
       await api(`/tabularius/hosts/${host.id}`, 'PUT', { policy: 'authorize', commands: 'touch /tmp/*' });
       const decided = async (text, approved) => {
@@ -467,22 +516,32 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.match(await box({ image: 'alpine:3', command: 'wget -q -T 3 -O- http://example.com' }), /Exit code: [1-9]/);
     assert.match(await box({ image: 'alpine:3', command: 'echo hi', network: true }), /only in full permission mode/);
     assert.match(await box({ image: 'alpine:3', command: 'sleep 30', timeout: 2 }), /Timed out and stopped/);
-    assert.match(await box({ image: 'python:3.13-slim', command: 'python -V' }), /not available/);
+    // The images offered and allowed are the ones in the limits; the sandbox runs only images already on the host.
+    assert.deepEqual(mock.requests.anthropic.at(-1).body.tools.find(tool => tool.name === 'run_sandbox').input_schema.properties.image.enum, ['alpine:3']);
+    // An image not in the list never reaches the sandbox.
+    assert.match(await box({ image: 'python:3.13-slim', command: 'true' }), /is not available; available: alpine:3/);
     assert.equal((await fetch(`http://127.0.0.1:${sandbox.port}/run`, { method: 'POST', body: '{}' })).status, 401);
     assert.equal((await exec('docker', ['ps', '-aq', '--filter', 'label=tabularius.sandbox'])).stdout.trim(), '', 'no sandbox container is left');
     assert(db.prepare("SELECT count(*) AS n FROM tabularius_commands WHERE host_id='sandbox'").get().n >= 5);
 
-    // Restart with another embedding model, then switch the conversation to OpenAI: it continues with the earlier turns as context.
+    // Another embedding model chosen from the service's list, then a restart, then switch the conversation to OpenAI:
+    // it continues with the earlier turns as context.
+    assert.deepEqual((await api('/tabularius/settings/embedding-models')).map(model => model.id), ['test-embed', 'test-embed-2']);
+    await api('/tabularius/settings', 'PUT', { embedding: { url: `${mock.url}/embedding/v1`, model: 'test-embed-2', batch: 4 } });
     await page.close();
     await gateway.close();
-    url = await start('test-embed-2');
+    url = await start();
     await until('the hosted client to resume', async () => (await status()).replicated);
+    // The environment's settings are imported once: the restart keeps the model set on the web, and the key with it.
+    assert.deepEqual((({ model, keySet, batch }) => ({ model, keySet, batch }))((await api('/tabularius/settings')).embedding), { model: 'test-embed-2', keySet: true, batch: 4 });
     // A different embedding model rebuilds the index with its own vectors.
     await until('the index to be rebuilt with the new model', () => db.prepare('SELECT embedding_model FROM tabularius_vaults').get()?.embedding_model === 'test-embed-2' && db.prepare('SELECT count(*) AS n FROM tabularius_chunks').get().n > 0);
     assert(mock.requests.embeddings.some(r => r.body.model === 'test-embed-2'));
     assert(mock.requests.embeddings.every(r => r.body.input.length <= 4), 'embedding requests respect the batch size');
-    assert.equal((await call(`/tabularius/conversations/${conversation.id}`, 'PATCH', { model: 'openai/none' })).status, 400);
-    assert.equal((await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { model: 'openai/gpt-test' })).model, 'openai/gpt-test');
+    response = await call(`/tabularius/conversations/${conversation.id}`, 'PATCH', { recipe: 'none' });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, 'Recipe not available');
+    assert.equal((await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { recipe: recipeId('GPT 测试') })).recipe, recipeId('GPT 测试'));
     const stream = await (await call(`/tabularius/conversations/${conversation.id}/messages`, 'POST', { message: '银杏节点' })).text();
     assert.match(stream, /event: tool\ndata: {"name":"search_notes"/);
     assert.match(stream, /event: done\ndata: {"read":\["运维\/服务器\/紫藤.md"\],"sources":\[\]}/);
@@ -502,19 +561,20 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.match(web.stream, /"sources":\[{"url":"https:\/\/example.com\/release","title":"Release notes"}\]/);
 
     // vLLM: reasoning goes back on assistant messages; the web through SearXNG and the server's fetch, by permission mode.
-    await gateway.close();
-    // A small context window makes the long history drop its earliest exchanges.
-    url = await start('test-embed-2', ['blocked.example.org']);
-    await until('the hosted client to resume', async () => (await status()).replicated);
-    await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { model: 'vllm/esmeralda', prompt: '本对话只谈运维。' });
+    // A domain blocked on the web applies to the next request; a small context window drops the earliest exchanges.
+    const webSettings = (await api('/tabularius/settings')).web;
+    await api('/tabularius/settings', 'PUT', { web: { ...webSettings, blocked: ['blocked.example.org'] } });
+    assert.deepEqual((await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { recipe: recipeId('运维 vLLM'), prompt: '本对话只谈运维。', params: { vllm: { temperature: 0.5 } } })).params,
+      { vllm: { temperature: 0.5 } });
     web = await ask('WEB 版本');
     assert.match(web.answer, /版本 2.0\n+2026 年发布 & 支持 bge-m3。/);
     assert.doesNotMatch(web.answer, /ignore\(\)/);
     assert.match(web.stream, /"sources":\[{"url":"http:\/\/127.0.0.1:\d+\/page","title":"发布说明"}\]/);
     const vllmLast = mock.requests.vllm.at(-1).body;
-    // The vault's vLLM parameters, the thinking switch as a chat-template argument, and the conversation's extra prompt.
-    assert.deepEqual([vllmLast.temperature, vllmLast.min_tokens, vllmLast.chat_template_kwargs], [0.3, 2, { enable_thinking: false }]);
-    assert.match(vllmLast.messages[0].content, /本对话只谈运维。$/);
+    // The recipe's parameters with the conversation's adjustment, the thinking switch as a chat-template argument, then the
+    // recipe's prompt, the conversation's extra prompt and the model answering.
+    assert.deepEqual([vllmLast.temperature, vllmLast.min_tokens, vllmLast.chat_template_kwargs], [0.5, 2, { enable_thinking: false }]);
+    assert.match(vllmLast.messages[0].content, /\n\n回答要简短。\n\nInstructions for this conversation:\n\n本对话只谈运维。\n\nThis answer is written by esmeralda, served by a local vLLM server\./);
     assert(vllmLast.messages.some(m => m.role === 'assistant' && m.reasoning === 'thinking-1'), 'reasoning is replayed to vLLM');
     assert(vllmLast.tools.some(tool => tool.function.name === 'fetch_url'));
     assert.match(vllmLast.messages[1].content, /left out to fit the context window/);
@@ -547,8 +607,14 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.equal(settingsView.providers.anthropic.keyHint, 'opic');
     assert(!JSON.stringify(settingsView).includes('test-anthropic') && !JSON.stringify(settingsView).includes('test-openai'));
     assert(!db.prepare('SELECT group_concat(value) AS v FROM tabularius_settings').get().v.includes('test-anthropic'), 'keys are sealed');
-    await api('/tabularius/settings', 'PUT', { providers: { openai: { key: 'replaced-openai-key' } }, defaultModel: 'openai/gpt-test' });
-    assert.equal((await api('/tabularius')).defaultModel, 'openai/gpt-test');
+    // The models to choose from come from each provider's API, with the saved key and address.
+    assert.deepEqual(await api('/tabularius/settings/models/anthropic'), [{ id: 'claude-opus-5-5', name: 'Claude Opus 5.5' }]);
+    assert.deepEqual(await api('/tabularius/settings/models/openai'), [{ id: 'gpt-test', name: 'GPT Test' }], 'models that do not chat are left out');
+    assert.deepEqual(await api('/tabularius/settings/models/vllm'), [{ id: 'esmeralda', name: 'esmeralda', context: 6000 }]);
+    assert.equal((await call('/tabularius/settings/models/none')).status, 404);
+    assert.equal(mock.requests.models.findLast(r => r.service === 'openai').headers.authorization, 'Bearer test-openai');
+    await api('/tabularius/settings', 'PUT', { providers: { openai: { key: 'replaced-openai-key' } }, defaultRecipe: recipeId('GPT 测试') });
+    assert.equal((await api('/tabularius')).defaultRecipe, recipeId('GPT 测试'));
     const openaiBefore = mock.requests.openai.length;
     assert.equal((await api('/tabularius/settings/test', 'POST', { model: 'openai/gpt-test' })).ok, true);
     assert.equal(mock.requests.openai[openaiBefore].headers.authorization, 'Bearer replaced-openai-key', 'a new key applies without a restart');
@@ -558,7 +624,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert(!('tools' in mock.requests.vllm[vllmTestBefore].body) && !('tool_choice' in mock.requests.vllm[vllmTestBefore].body), 'vLLM rejects an empty tool list');
     assert.equal((await api('/tabularius/settings/test', 'POST', { model: 'anthropic/claude-opus-5-5' })).ok, true);
     assert(!('tools' in mock.requests.anthropic.at(-1).body));
-    assert.equal((await call('/tabularius/settings', 'PUT', { params: { anthropic: { temperature: 1 } } })).status, 400);
+    assert.equal((await call('/tabularius/settings', 'PUT', { recipes: [...recipes, { ...recipes[0], id: undefined }] })).status, 400, 'recipe names differ');
     assert.equal((await call('/tabularius/settings', 'PUT', { providers: { vllm: { url: 'not a url' } } })).status, 400);
     assert.deepEqual((await api('/tabularius/settings/datasets', 'POST', { url: `${mock.url}/mcp` })).map(d => d.id), ['ds-ops', 'ds-notes']);
     await api('/tabularius/settings', 'PUT', { knowledge: { ...settingsView.knowledge, datasets: ['ds-ops'], limit: 3, threshold: 0.4 } });
@@ -566,10 +632,14 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await api('/tabularius/settings/knowledge', 'POST', { question: '银杏' });
     const retrieval = mock.requests.mcp.slice(mcpBefore).find(r => r.body.params?.name === 'ragflow_retrieval').body.params.arguments;
     assert.deepEqual([retrieval.dataset_ids, retrieval.page_size, retrieval.similarity_threshold], [['ds-ops'], 3, 0.4]);
-    // A new conversation starts with the model chosen for it.
-    const started = await (await call(`/tabularius/vaults/${vault.id}/conversations`, 'POST', { message: '紫藤服务器', model: 'vllm/esmeralda' })).text();
+    // A new conversation starts with the recipe chosen for it, not the default; without one it follows the default again.
+    assert.equal((await call(`/tabularius/vaults/${vault.id}/conversations`, 'POST', { message: '紫藤服务器', recipe: 'none' })).status, 400);
+    const vllmStart = mock.requests.vllm.length;
+    const started = await (await call(`/tabularius/vaults/${vault.id}/conversations`, 'POST', { message: '紫藤服务器', recipe: recipeId('运维 vLLM') })).text();
     const startedId = JSON.parse(/event: conversation\ndata: (.*)/.exec(started)[1]).id;
-    assert.equal((await api(`/tabularius/conversations/${startedId}`)).model, 'vllm/esmeralda');
+    assert.equal((await api(`/tabularius/conversations/${startedId}`)).recipe, recipeId('运维 vLLM'));
+    assert(mock.requests.vllm.length > vllmStart && mock.requests.vllm.at(-1).body.model === 'esmeralda');
+    assert.equal((await api(`/tabularius/conversations/${startedId}`, 'PATCH', { recipe: null })).recipe, recipeId('GPT 测试'));
 
     // Disabling removes everything the server held for this vault.
     await api(`/tabularius/vaults/${vault.id}`, 'DELETE');

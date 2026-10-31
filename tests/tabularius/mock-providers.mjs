@@ -1,5 +1,6 @@
 // Stand-ins for the Anthropic Messages API (with server-side web search), the OpenAI Responses API, vLLM's Chat Completions,
-// OpenAI-shaped embeddings, RAGFlow's MCP server, SearXNG and one web page, enough for the official SDKs.
+// OpenAI-shaped embeddings, the model lists of all four, RAGFlow's MCP server, SearXNG and one web page, enough for the
+// official SDKs. vLLM and the embedding service are reached under /vllm/v1 and /embedding/v1, so their model lists differ.
 // The model is scripted: search for the user's question, read the first note found, then answer citing it with a quote;
 // "PROPOSE <json>", "KB <question>", "WEB <question>", "WEBLEAK <question>" and the others run other scripts (see plan()).
 // Every request body is kept so tests can check what would have left the server.
@@ -57,7 +58,7 @@ function plan(results, question, final = false) {
 }
 
 export async function startMockProviders() {
-  const requests = { anthropic: [], openai: [], vllm: [], embeddings: [], mcp: [], searxng: [], page: [] };
+  const requests = { anthropic: [], openai: [], vllm: [], embeddings: [], models: [], mcp: [], searxng: [], page: [] };
   const sessions = new Set();
   let sessionCount = 0;
   const knowledge = [];
@@ -66,7 +67,21 @@ export async function startMockProviders() {
     for await (const chunk of req) chunks.push(chunk);
     const raw = Buffer.concat(chunks).toString();
     const body = raw ? JSON.parse(raw) : {};
-    const path = req.url.split('?')[0];
+    let path = req.url.split('?')[0];
+    const service = /^\/(vllm|embedding)(?=\/)/.exec(path)?.[1];
+    if (service) path = path.slice(service.length + 1);
+    if (path === '/v1/models') {
+      // What settings.ts reads: Anthropic's display names, OpenAI's identifiers (chat models among others), vLLM's context lengths.
+      const from = service ?? (req.headers['anthropic-version'] ? 'anthropic' : 'openai');
+      requests.models.push({ service: from, headers: req.headers });
+      const model = (id, extra = {}) => ({ id, object: 'model', created: 0, owned_by: from, ...extra });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(from === 'anthropic'
+        ? { data: [{ type: 'model', id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', created_at: '2026-01-01T00:00:00Z' }], has_more: false, first_id: 'claude-opus-5-5', last_id: 'claude-opus-5-5' }
+        : { object: 'list', data: from === 'openai' ? [model('gpt-test'), model('text-embedding-3-small')]
+          : from === 'vllm' ? [model('esmeralda', { max_model_len: 6000 })] : [model('test-embed'), model('test-embed-2')] }));
+      return;
+    }
     if (path === '/v1/messages') {
       requests.anthropic.push({ headers: req.headers, body, raw });
       // Tool results since the last plain user question.

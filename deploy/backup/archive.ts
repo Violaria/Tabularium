@@ -81,12 +81,14 @@ export async function importVolume(image: string, volume: string, directory: str
 export async function clearVolume(image: string, volume: string) {
   await docker(['run', '--rm', '--user', '0', '--network', 'none', '--entrypoint', 'find', '-v', `${volume}:/v`, image, '/v', '-mindepth', '1', '-delete']);
 }
-// Configuration files mounted from the Compose directory; a socket (the sandbox's Docker socket) is not configuration.
+// Configuration files mounted from the Compose directory. A socket (the sandbox's Docker socket) and a directory (where
+// scheduled backups are written) are not configuration.
 export function bindFiles(compose: Compose, config: ComposeConfig) {
   return Object.values(config.services).flatMap(service => service.volumes ?? []).filter(v => v.type === 'bind').flatMap(v => {
+    const entry = statSync(v.source, { throwIfNoEntry: false });
+    if (entry?.isSocket() || entry?.isDirectory()) return [];
     const path = relative(compose.directory, v.source);
     if (!path.startsWith('..')) return [path];
-    if (statSync(v.source, { throwIfNoEntry: false })?.isSocket()) return [];
     throw new Error(`Bind mount ${v.source} is outside the Compose directory`);
   });
 }
@@ -186,6 +188,8 @@ export async function backup(options: DeploymentOptions, resume = true): Promise
     report.backup = { ok: true, path: join(output, id), notReadyVaults: manifest.sqlite.notReady, timing: manifest.timing };
   } catch (error) {
     report.backup = { ok: false, stage, error: (error as Error).message };
+    // An unfinished backup holds a copy of the environment file: it is not left behind.
+    await rm(partial, { recursive: true, force: true });
   }
   if (!resume && report.backup.ok) { report.source = { ok: true, resumed: false }; return report; }
   // `start` reuses the existing containers, so a newer image already tagged for the service is not picked up here.

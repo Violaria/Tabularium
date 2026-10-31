@@ -14,7 +14,9 @@ export async function restore(directory: string, options: { project: string; tar
   if (existing?.length) throw new Error(`Target directory ${target} is not empty`);
 
   const staging = await mkdtemp(join(dirname(target), `.${basename(target)}.restore-`));
-  await tar('-xf', join(path, 'config.tar'), '-C', staging);
+  // The staging folder holds a copy of the environment file: it goes if anything before it becomes the target fails.
+  const cleanup = (error: unknown) => rm(staging, { recursive: true, force: true }).then(() => { throw error; });
+  await tar('-xf', join(path, 'config.tar'), '-C', staging).catch(cleanup);
   const files = [...composeFiles(manifest).map(file => join(staging, file)), join(staging, 'compose.override.yaml')];
   await writeFile(files.at(-1)!, `services:
   server:
@@ -23,17 +25,20 @@ export async function restore(directory: string, options: { project: string; tar
     pull_policy: never
     ports: !override
       - "127.0.0.1:${options.port}:3000"
+    environment:
+      # A restored copy or an upgrade trial must not write into, or prune, the original's scheduled backups.
+      TABULARIUM_BACKUP_DIR: ""
 `);
   let compose = new Compose(files, join(staging, ENV_NAME), options.project);
-  let config = await compose.config();
+  let config = await compose.config().catch(cleanup);
   const appVolume = compose.volume(config, 'server', APP_TARGET);
   const notesVolume = compose.volume(config, 'couchdb', NOTES_TARGET);
   for (const volume of [appVolume, notesVolume]) {
     if (await volumeExists(volume)) { await rm(staging, { recursive: true }); throw new Error(`Volume ${volume} already exists`); }
   }
   if ((await compose.run('ps', '-a', '-q')).trim()) { await rm(staging, { recursive: true }); throw new Error(`Project ${options.project} already has containers`); }
-  if (existing) await rmdir(target);
-  await rename(staging, target);
+  if (existing) await rmdir(target).catch(cleanup);
+  await rename(staging, target).catch(cleanup);
   await chmod(target, 0o700);
   await chmod(join(target, ENV_NAME), 0o600);
   compose = new Compose(files.map(file => join(target, basename(file))), join(target, ENV_NAME), options.project);

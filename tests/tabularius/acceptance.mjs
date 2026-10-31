@@ -13,7 +13,6 @@ import { join, relative, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createGateway } from '../../apps/server/dist/server.js';
-import { embedder } from '../../apps/server/dist/tabularius/providers.js';
 import { createFilter } from '../../apps/server/dist/tabularius/filter.js';
 
 const exec = promisify(execFile);
@@ -82,15 +81,16 @@ try {
   gateway = await createGateway({ database, bootstrapUser: 'admin', bootstrapPassword: password, origins: [],
     couch: { url: couchUrl, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword: randomBytes(24).toString('hex') },
     tabularius: { key: randomBytes(32), root: join(temp, 'tabularius'), cli: cliPath,
-      // The provider, its key and the knowledge base, as the environment would configure them on a first start.
+      // The provider, its key, the knowledge base, embeddings, the web and the limits, as the environment would configure them on a first start.
       initial: {
         providers: { [providerName]: providerName === 'vllm'
           ? { url: `http://127.0.0.1:${proxy.address().port}/v1`, key: env('TABULARIUS_VLLM_KEY'), models: [model], context: 65_536 }
           : { key: env(providerName === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'), models: [model] } },
         defaultModel: `${providerName}/${model}`, knowledge: { url: mcpUrl, datasets },
-      },
-      embedder: embedder('bge-m3', embeddingUrl, undefined, 32),
-      web: { options: { allowed: [], blocked: [], maxUses: 5 }, searxng: providerName === 'vllm' ? searxng : undefined, intranet: [] }, modeLimit: 'read-only' } });
+        embedding: { url: embeddingUrl, model: 'bge-m3', batch: 32 },
+        web: { enabled: true, searxng: providerName === 'vllm' ? searxng : '', allowed: [], blocked: [], maxUses: 5, intranet: [] },
+        limits: { modeLimit: 'read-only' },
+      } } });
   const url = await gateway.listen();
   let token;
   const call = (path, method = 'GET', body) => fetch(`${url}/api/v1${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body),
