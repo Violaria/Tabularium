@@ -103,6 +103,11 @@ export default class CustomSortPlugin
 
 	uninstallerOfFileExplorerPatch: MonkeyAroundUninstaller|undefined = undefined
 
+	/** Interface text: English here; an embedding application can translate it. */
+	text(english: string): string {
+		return english
+	}
+
 	showNotice(message: string, timeout?: number) {
 		if (this.settings.notificationsEnabled || (Platform.isMobile && this.settings.mobileNotificationsEnabled)) {
 			new Notice(message, timeout)
@@ -360,7 +365,7 @@ export default class CustomSortPlugin
 				:
 				ICON_SORT_MOBILE_INITIAL // REMARK: on small-screen mobile devices this icon stays permanent
 			,
-			'Toggle custom sorting', (evt: MouseEvent) => {
+			this.text('Toggle custom sorting'), (evt: MouseEvent) => {
 				// Clicking the icon toggles between the states of custom sort plugin
 				this.switchPluginStateTo(this.settings.suspended)
 			});
@@ -381,14 +386,14 @@ export default class CustomSortPlugin
 		const m: boolean = Platform.isMobile
 
 		const applyCustomSortMenuItem = (item: MenuItem) => {
-			item.setTitle(m ? 'Custom sort: apply custom sorting' : 'Apply custom sorting');
+			item.setTitle(plugin.text(m ? 'Custom sort: apply custom sorting' : 'Apply custom sorting'));
 			item.onClick(() => {
 				plugin.switchPluginStateTo(true)
 			})
 		};
 
 		const suspendCustomSortMenuItem = (item: MenuItem) => {
-			item.setTitle(m ? 'Custom sort: suspend custom sorting' : 'Suspend custom sorting');
+			item.setTitle(plugin.text(m ? 'Custom sort: suspend custom sorting' : 'Suspend custom sorting'));
 			item.onClick(() => {
 				plugin.switchPluginStateTo(false)
 			})
@@ -396,7 +401,7 @@ export default class CustomSortPlugin
 
 		const getBookmarkThisMenuItemForFile = (file: TAbstractFile): ContextMenuProvider =>
 			(item: MenuItem) => {
-				item.setTitle(m ? 'Bookmark it for custom sorting' : 'Bookmark it for sorting');
+				item.setTitle(plugin.text(m ? 'Bookmark it for custom sorting' : 'Bookmark it for sorting'));
 				item.onClick(() => {
 					const bookmarksPlugin = getBookmarksPlugin(plugin.app, plugin.settings.bookmarksGroupToConsumeAsOrderingReference)
 					if (bookmarksPlugin) {
@@ -408,7 +413,7 @@ export default class CustomSortPlugin
 
 		const getUnbookmarkThisMenuItemForFile = (file: TAbstractFile): ContextMenuProvider =>
 			(item: MenuItem) => {
-				item.setTitle(m ? 'UNbookmark it from custom sorting' : 'UNbookmark it from sorting');
+				item.setTitle(plugin.text(m ? 'UNbookmark it from custom sorting' : 'UNbookmark it from sorting'));
 				item.onClick(() => {
 					const bookmarksPlugin = getBookmarksPlugin(plugin.app, plugin.settings.bookmarksGroupToConsumeAsOrderingReference)
 					if (bookmarksPlugin) {
@@ -420,7 +425,7 @@ export default class CustomSortPlugin
 
 		const getBookmarkAllMenuItemForFile = (file: TAbstractFile): ContextMenuProvider =>
 			(item: MenuItem) => {
-				item.setTitle(m ? 'Bookmark it+siblings for custom sorting' : 'Bookmark it+siblings for sorting');
+				item.setTitle(plugin.text(m ? 'Bookmark it+siblings for custom sorting' : 'Bookmark it+siblings for sorting'));
 				item.onClick(() => {
 					const bookmarksPlugin = getBookmarksPlugin(plugin.app, plugin.settings.bookmarksGroupToConsumeAsOrderingReference)
 					if (bookmarksPlugin) {
@@ -433,7 +438,7 @@ export default class CustomSortPlugin
 
 		const getUnbookmarkAllMenuItemForFile = (file: TAbstractFile): ContextMenuProvider =>
 			(item: MenuItem) => {
-				item.setTitle(m ? 'UNbookmark it+siblings from custom sorting' : 'UNbookmark it+siblings from sorting');
+				item.setTitle(plugin.text(m ? 'UNbookmark it+siblings from custom sorting' : 'UNbookmark it+siblings from sorting'));
 				item.onClick(() => {
 					const bookmarksPlugin = getBookmarksPlugin(plugin.app, plugin.settings.bookmarksGroupToConsumeAsOrderingReference)
 					if (bookmarksPlugin) {
@@ -446,7 +451,7 @@ export default class CustomSortPlugin
 
 		const getBookmarkSelectedMenuItemForFiles = (files: TAbstractFile[]): ContextMenuProvider =>
 			(item: MenuItem) => {
-				item.setTitle(m ? 'Bookmark selected for custom sorting' : 'Custom sort: bookmark selected for sorting');
+				item.setTitle(plugin.text(m ? 'Bookmark selected for custom sorting' : 'Custom sort: bookmark selected for sorting'));
 				item.onClick(() => {
 					const bookmarksPlugin = getBookmarksPlugin(plugin.app, plugin.settings.bookmarksGroupToConsumeAsOrderingReference)
 					if (bookmarksPlugin) {
@@ -460,7 +465,7 @@ export default class CustomSortPlugin
 
 		const getUnbookmarkSelectedMenuItemForFiles = (files: TAbstractFile[]): ContextMenuProvider =>
 			(item: MenuItem) => {
-				item.setTitle(m ? 'UNbookmark selected from custom sorting' : 'Custom sort: UNbookmark selected from sorting');
+				item.setTitle(plugin.text(m ? 'UNbookmark selected from custom sorting' : 'Custom sort: UNbookmark selected from sorting'));
 				item.onClick(() => {
 					const bookmarksPlugin = getBookmarksPlugin(plugin.app, plugin.settings.bookmarksGroupToConsumeAsOrderingReference)
 					if (bookmarksPlugin) {
@@ -481,7 +486,7 @@ export default class CustomSortPlugin
 					// In that case flatten the menu.
 					let submenu: Menu|undefined
 					if (item) {
-						item.setTitle('Custom sort:');
+						item.setTitle(plugin.text('Custom sort:'));
 						item.setIcon('hashtag');
 						submenu = item.setSubmenu()
 					}
@@ -525,7 +530,7 @@ export default class CustomSortPlugin
 					// In that case flatten the menu.
 					let submenu: Menu|undefined
 					if (item) {
-						item.setTitle('Custom sort:');
+						item.setTitle(plugin.text('Custom sort:'));
 						item.setIcon('hashtag');
 						submenu = item.setSubmenu()
 					}
@@ -599,14 +604,14 @@ export default class CustomSortPlugin
 		const plugin: CustomSortPlugin = this
 		this.addCommand({
 			id: 'enable-custom-sorting',
-			name: 'Enable and apply the custom sorting, (re)parsing the sorting configuration first. Sort-on.',
+			name: plugin.text('Enable and apply the custom sorting, (re)parsing the sorting configuration first. Sort-on.'),
 			callback: () => {
 				plugin.switchPluginStateTo(true)
 			}
 		});
 		this.addCommand({
 			id: 'suspend-custom-sorting',
-			name: 'Suspend the custom sorting. Sort-off.',
+			name: plugin.text('Suspend the custom sorting. Sort-off.'),
 			callback: () => {
 				plugin.switchPluginStateTo(false)
 			}
