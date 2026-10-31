@@ -79,7 +79,7 @@ test('editing on the web notes page', { timeout: 900_000 }, async () => {
     const answer = value => page.once('dialog', dialog => dialog.accept(value));
     const unlock = async () => {
       await page.getByRole('button', { name: '编辑库' }).click();
-      await page.getByLabel('口令').fill(passphrase);
+      await page.getByLabel('E2EE 密码短语').fill(passphrase);
       await page.getByRole('button', { name: '解锁' }).click();
       await expect(page.getByText('本地明文副本')).toBeVisible({ timeout: 120_000 });
     };

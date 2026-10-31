@@ -75,7 +75,7 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     page.on('dialog', dialog => dialog.accept());
     const unlock = async secret => {
       await page.getByRole('button', { name: '网页库' }).click();
-      await page.getByLabel('口令').fill(secret);
+      await page.getByLabel('E2EE 密码短语').fill(secret);
       await page.getByRole('button', { name: '解锁' }).click();
     };
 
@@ -85,8 +85,8 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     await page.getByLabel('密码').fill(userPassword);
     await page.getByRole('button', { name: '登录' }).click();
     await unlock('wrong-passphrase');
-    await expect(page.getByText('口令错误。')).toBeVisible({ timeout: 60_000 });
-    await page.getByLabel('口令').fill(passphrase);
+    await expect(page.getByText('密码短语错误。')).toBeVisible({ timeout: 60_000 });
+    await page.getByLabel('E2EE 密码短语').fill(passphrase);
     await page.getByRole('button', { name: '解锁' }).click();
     await expect(page.getByText('本地明文副本')).toBeVisible({ timeout: 120_000 });
     const devices = await api(`/vaults/${vault.id}/devices`);
@@ -133,7 +133,7 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     // A link from a Tabularius citation goes straight to the vault's unlock form, then opens the note.
     await page.goto('about:blank');
     await page.goto(`${url}/notes/#${vault.id}/${encodeURIComponent('笔记')}/${encodeURIComponent('中文.md')}`);
-    await page.getByLabel('口令').fill(passphrase);
+    await page.getByLabel('E2EE 密码短语').fill(passphrase);
     await page.getByRole('button', { name: '解锁' }).click();
     await expect(page.getByText('本地明文副本')).toBeVisible({ timeout: 60_000 });
     await expect(article.getByRole('heading', { name: '中文笔记' })).toBeVisible();

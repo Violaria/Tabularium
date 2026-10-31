@@ -9,6 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createTemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
 import { connectTabularium, startTabularium, until, type ObsidianLiveSyncSession, type TemporaryVault } from './obsidian-runtime.ts';
+import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 
 const exec = promisify(execFile);
 const server = process.env.TABULARIUM_URL!;
@@ -57,6 +58,15 @@ try {
   const a = await createTemporaryVault(); vaults.push(a);
   await cp(source, a.path, { recursive: true });
   session = await startTabularium(a, obsidianCli);
+  // A device migrating from LiveSync keeps that plug-in's local database: documents without path obfuscation, which
+  // the gateway refuses. Build one by scanning the vault with LiveSync settings (no remote is reached).
+  await evalObsidianJson(obsidianCli, `(async()=>{const c=app.plugins.plugins['tabularium'].core;await c.services.setting.applyPartial({isConfigured:true,couchDB_URI:'http://127.0.0.1:9',couchDB_DBNAME:'legacy',couchDB_USER:'legacy',couchDB_PASSWORD:'legacy',encrypt:false,usePathObfuscation:false,liveSync:false,syncOnStart:false,syncOnSave:false,periodicReplication:false},true);c.services.appLifecycle.performRestart();return JSON.stringify(true);})()`, session.cliEnv);
+  const legacy = await until(async () => {
+    const info = await evalObsidianJson<{ docs: number; plain: number }>(obsidianCli, `(async()=>{const c=app.plugins.plugins['tabularium']?.core;if(!c?.services.database.isDatabaseReady())return JSON.stringify({docs:0,plain:0});const r=await c.services.database.localDatabase.localDatabase.allDocs();return JSON.stringify({docs:r.rows.length,plain:r.rows.filter(x=>!x.id.startsWith('h:')&&!x.id.startsWith('f:')&&!x.id.startsWith('_')).length});})()`, session!.cliEnv).catch(() => undefined);
+    return info && info.plain >= expected.size ? info : undefined;
+  }, timeoutMs, 3000);
+  report.legacyLocalDocuments = legacy.plain;
+  console.log(`[migration] legacy local database holds ${legacy.plain} unobfuscated documents`);
   const uploadStarted = Date.now();
   await connectTabularium(session, obsidianCli, { server, username, password, vault: { create: 'Commentarii' }, deviceName: 'Obsidian A', passphrase });
 
