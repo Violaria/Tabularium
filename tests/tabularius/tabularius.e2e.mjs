@@ -552,6 +552,12 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     const openaiBefore = mock.requests.openai.length;
     assert.equal((await api('/tabularius/settings/test', 'POST', { model: 'openai/gpt-test' })).ok, true);
     assert.equal(mock.requests.openai[openaiBefore].headers.authorization, 'Bearer replaced-openai-key', 'a new key applies without a restart');
+    assert(!('tools' in mock.requests.openai[openaiBefore].body), 'a connection test sends no empty tool list');
+    const vllmTestBefore = mock.requests.vllm.length;
+    assert.equal((await api('/tabularius/settings/test', 'POST', { model: 'vllm/esmeralda' })).ok, true);
+    assert(!('tools' in mock.requests.vllm[vllmTestBefore].body) && !('tool_choice' in mock.requests.vllm[vllmTestBefore].body), 'vLLM rejects an empty tool list');
+    assert.equal((await api('/tabularius/settings/test', 'POST', { model: 'anthropic/claude-opus-5-5' })).ok, true);
+    assert(!('tools' in mock.requests.anthropic.at(-1).body));
     assert.equal((await call('/tabularius/settings', 'PUT', { params: { anthropic: { temperature: 1 } } })).status, 400);
     assert.equal((await call('/tabularius/settings', 'PUT', { providers: { vllm: { url: 'not a url' } } })).status, 400);
     assert.deepEqual((await api('/tabularius/settings/datasets', 'POST', { url: `${mock.url}/mcp` })).map(d => d.id), ['ds-ops', 'ds-notes']);
