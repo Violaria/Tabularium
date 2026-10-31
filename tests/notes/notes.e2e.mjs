@@ -57,6 +57,15 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
       '笔记/子/图示.md': '图示正文。\n',
       'assets/图.png': png,
       'readme.md': '第一版\n',
+      '笔记/排版.md': [
+        '# 排版示例', '', '一段正文，带 `inline code` 和 [外部链接](https://example.com)。', '', '## 安装', '',
+        '```bash', 'cd /root', 'sudo ./ddns-go -s install -l :9876 -f 300 -c /root/.ddns_go_config.yaml  # 注册为服务', '```', '',
+        '```yaml', 'server:', '  port: 9876', '  enabled: true', '```', '',
+        '```python', 'def greet(name: str) -> str:', '    return f"hello {name}"', '```', '',
+        '### 说明', '', '> 引用的一段话。', '', '> [!warning] 注意', '> 公网不要开放管理页面。', '', '> [!tip]', '> 先备份配置。', '',
+        '| 项目 | 值 |', '| --- | --- |', '| 版本 | 6.14.1 |', '| 端口 | 9876 |', '',
+        '- [x] 安装', '- [ ] 配置 DNS', '- 普通条目', '',
+      ].join('\n'),
     };
     await mkdir(client.db, { recursive: true });
     for (const [path, content] of Object.entries(notes)) { await mkdir(join(client.vault, path, '..'), { recursive: true }); await writeFile(join(client.vault, path), content); }
@@ -68,7 +77,7 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     await cli('mirror', client.vault); await cli('sync');
 
     browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN', permissions: ['clipboard-read', 'clipboard-write'] });
     const page = await context.newPage();
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     if (process.env.NOTES_DEBUG) { page.on('console', m => console.log('console:', m.type(), m.text().slice(0, 300))); page.on('response', r => console.log('http', r.status(), r.request().method(), r.url().slice(0, 150))); page.on('requestfailed', r => console.log('failed', r.url().slice(0, 150), r.failure()?.errorText)); }
@@ -107,6 +116,29 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     await page.getByRole('button', { name: '中文', exact: true }).click();
     await page.screenshot({ path: join(shots, 'reading.png') });
     await article.getByRole('link', { name: '看图' }).click();
+
+    // Notes read like Obsidian: highlighted code blocks by kind with a copy button, callouts, quotes, tables and task lists.
+    await page.getByRole('button', { name: '排版', exact: true }).click();
+    await expect(article.getByRole('heading', { name: '排版示例' })).toBeVisible();
+    assert.deepEqual(await article.locator('.code-block').evaluateAll(blocks => blocks.map(b => [b.dataset.kind, b.querySelector('.code-lang').textContent])),
+      [['terminal', 'Bash'], ['config', 'YAML'], ['code', 'Python']]);
+    assert(await article.locator('.code-block[data-kind="terminal"] .hljs-comment').count() > 0, 'shell comments highlighted');
+    assert(await article.locator('.code-block[data-kind="config"] .hljs-attr').count() > 0, 'YAML keys highlighted');
+    assert(await article.locator('.code-block[data-kind="code"] .hljs-keyword').count() > 0, 'Python keywords highlighted');
+    await article.locator('.code-block').first().hover();
+    await article.locator('.code-block').first().getByRole('button', { name: '复制' }).click();
+    await expect(article.locator('.code-block').first().getByRole('button', { name: '已复制' })).toBeVisible();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'cd /root\nsudo ./ddns-go -s install -l :9876 -f 300 -c /root/.ddns_go_config.yaml  # 注册为服务\n');
+    assert.deepEqual(await article.locator('.callout').evaluateAll(items => items.map(c => [c.dataset.callout, c.querySelector('.callout-title').textContent])), [['warning', '注意'], ['tip', 'Tip']]);
+    assert.doesNotMatch(await article.textContent(), /\[!warning\]|\[ \]|\[x\]/);
+    assert.deepEqual(await article.locator('li.task input').evaluateAll(boxes => boxes.map(b => b.checked)), [true, false]);
+    await expect(article.locator('table thead th')).toHaveText(['项目', '值']);
+    await page.screenshot({ path: join(shots, 'typography.png'), fullPage: true });
+    await page.locator('.main').evaluate(main => main.scrollTo(0, main.scrollHeight));
+    await page.screenshot({ path: join(shots, 'typography-end.png') });
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.screenshot({ path: join(shots, 'typography-dark.png'), fullPage: true });
+    await page.emulateMedia({ colorScheme: 'light' });
 
     // A change from another device arrives while the page is open.
     await page.getByRole('button', { name: 'readme', exact: true }).click();
