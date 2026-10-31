@@ -158,7 +158,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
 
     // The conversation's model and settings in its header; parameters as a form, not JSON.
     await expect(page.locator('#chat-model')).toHaveValue('anthropic/claude-opus-5-5');
-    assert.deepEqual(await page.locator('#chat-model option').allTextContents(), ['anthropic/claude-opus-5-5', 'openai/gpt-test', 'vllm/esmeralda']);
+    assert.deepEqual(await page.locator('#chat-model option').allTextContents(), ['Anthropic · claude-opus-5-5', 'OpenAI · gpt-test', 'vLLM · esmeralda']);
     await page.getByRole('button', { name: '对话设置' }).click();
     const settingsDialog = page.locator('dialog.chat-settings');
     const effort = settingsDialog.locator('[data-param="effort"]');
