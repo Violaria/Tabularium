@@ -76,12 +76,14 @@ test('editing on the web notes page', { timeout: 900_000 }, async () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
     const page = await context.newPage();
     const errors = []; page.on('pageerror', error => errors.push(error.message));
-    const answer = value => page.once('dialog', dialog => dialog.accept(value));
+    // The application's own dialogs: type into the text dialog, or confirm with the named action.
+    const answer = async value => { const dialog = page.getByRole('dialog'); await dialog.getByRole('textbox').fill(value); await dialog.locator('button[type=submit]').click(); };
+    const confirmAction = name => page.getByRole('dialog').getByRole('button', { name, exact: true }).click();
     const unlock = async () => {
       await page.getByRole('button', { name: '编辑库' }).click();
       await page.getByLabel('E2EE 密码短语').fill(passphrase);
       await page.getByRole('button', { name: '解锁' }).click();
-      await expect(page.getByText('本地明文副本')).toBeVisible({ timeout: 120_000 });
+      await expect(page.locator('.vault-more')).toBeVisible({ timeout: 120_000 });
     };
     const state = page.locator('.save-state');
     const editor = page.locator('.editor .cm-content').first();
@@ -95,7 +97,7 @@ test('editing on the web notes page', { timeout: 900_000 }, async () => {
     await page.evaluate(() => navigator.serviceWorker.ready);
 
     // Edit and save: reaches the other device.
-    await page.getByRole('button', { name: '▸ 笔记' }).click();
+    await page.getByRole('button', { name: '笔记', exact: true }).click();
     await page.getByRole('button', { name: '甲', exact: true }).click();
     await page.getByRole('button', { name: '编辑' }).click();
     await type('网页上的修改\n');
@@ -142,23 +144,23 @@ test('editing on the web notes page', { timeout: 900_000 }, async () => {
     assert.match(info, /"conflicts": "N\/A"/, `the CLI still sees a conflict: ${info}`);
 
     // New note, rename, delete.
-    answer('新建/乙');
     await page.getByRole('button', { name: '新建笔记' }).click();
+    await answer('新建/乙');
     await expect(page.locator('.editor')).toBeVisible();
     await type('新笔记正文\n');
     await expect(state).toHaveText('已同步', { timeout: 30_000 });
     await remote('新建/乙.md', c => text(c) === '新笔记正文\n');
     await page.getByRole('button', { name: '完成' }).click();
-    await page.getByRole('button', { name: '▸ 新建' }).click();
-    answer('新建/丙.md');
+    await page.getByRole('button', { name: '新建', exact: true }).click();
     await page.locator('.row', { has: page.getByRole('button', { name: '乙', exact: true }) }).getByRole('button', { name: '更多操作' }).click();
     await page.getByRole('menuitem', { name: '重命名或移动…' }).click();
+    await answer('新建/丙.md');
     await expect(page.getByRole('button', { name: '丙', exact: true })).toBeVisible({ timeout: 30_000 });
     await remote('新建/丙.md', c => text(c) === '新笔记正文\n');
     await remote('新建/乙.md', c => c === undefined || c.length === 0);
-    page.once('dialog', dialog => dialog.accept());
     await page.locator('.row', { has: page.getByRole('button', { name: '丙', exact: true }) }).getByRole('button', { name: '更多操作' }).click();
     await page.getByRole('menuitem', { name: '删除' }).click();
+    await confirmAction('删除');
     await expect(page.getByRole('button', { name: '丙', exact: true })).toHaveCount(0, { timeout: 30_000 });
     await remote('新建/丙.md', c => c === undefined || c.length === 0);
 

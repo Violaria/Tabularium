@@ -72,7 +72,6 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     const page = await context.newPage();
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     if (process.env.NOTES_DEBUG) { page.on('console', m => console.log('console:', m.type(), m.text().slice(0, 300))); page.on('response', r => console.log('http', r.status(), r.request().method(), r.url().slice(0, 150))); page.on('requestfailed', r => console.log('failed', r.url().slice(0, 150), r.failure()?.errorText)); }
-    page.on('dialog', dialog => dialog.accept());
     const unlock = async secret => {
       await page.getByRole('button', { name: '网页库' }).click();
       await page.getByLabel('E2EE 密码短语').fill(secret);
@@ -88,13 +87,13 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     await expect(page.getByText('密码短语错误。')).toBeVisible({ timeout: 60_000 });
     await page.getByLabel('E2EE 密码短语').fill(passphrase);
     await page.getByRole('button', { name: '解锁' }).click();
-    await expect(page.getByText('本地明文副本')).toBeVisible({ timeout: 120_000 });
+    await expect(page.locator('.vault-more')).toBeVisible({ timeout: 120_000 });
     const devices = await api(`/vaults/${vault.id}/devices`);
     const browserDevice = devices.find(d => d.name.startsWith('网页 · Chrome'));
     assert(browserDevice, 'the browser is registered as a device');
 
     // Tree, preview, image from the local replica, escaped HTML and in-page links.
-    await page.getByRole('button', { name: '▸ 笔记' }).click();
+    await page.getByRole('button', { name: '笔记', exact: true }).click();
     await page.getByRole('button', { name: '中文', exact: true }).click();
     const article = page.locator('article');
     await expect(article.getByRole('heading', { name: '中文笔记' })).toBeVisible();
@@ -104,6 +103,10 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     assert.equal(await page.evaluate(() => window.__xss), undefined);
     await article.getByRole('link', { name: '看图' }).click();
     await expect(article).toContainText('图示正文。');
+    const shots = resolve('test-runs', `notes-${Date.now()}`); await mkdir(shots, { recursive: true });
+    await page.getByRole('button', { name: '中文', exact: true }).click();
+    await page.screenshot({ path: join(shots, 'reading.png') });
+    await article.getByRole('link', { name: '看图' }).click();
 
     // A change from another device arrives while the page is open.
     await page.getByRole('button', { name: 'readme', exact: true }).click();
@@ -111,6 +114,20 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     await writeFile(join(client.vault, 'readme.md'), '第二版\n');
     await cli('mirror', client.vault); await cli('sync');
     await expect(article).toContainText('第二版', { timeout: 60_000 });
+
+    // The tree follows the vault's sortspec.md like the plug-in; a new rule file reorders it live.
+    const topLevel = () => page.locator('aside nav > ul > li > .row .name').allTextContents();
+    await expect.poll(topLevel).toEqual(['笔记', 'assets', 'readme']);
+    await writeFile(join(client.vault, 'sortspec.md'), '---\nsorting-spec: |-\n  target-folder: /\n  readme\n  笔记\n---\n');
+    await cli('mirror', client.vault); await cli('sync');
+    await expect.poll(topLevel, { timeout: 60_000 }).toEqual(['readme', '笔记', 'assets', 'sortspec']);
+
+    // The language selector in the sidebar redraws the open notes module at once, without locking the vault.
+    await page.getByLabel('语言').selectOption('en');
+    await expect(page.getByRole('button', { name: 'New note' })).toBeVisible();
+    await expect(article).toContainText('第二版');
+    await page.getByLabel('Language').selectOption('zh');
+    await expect(page.getByRole('button', { name: '新建笔记' })).toBeVisible();
 
     // The passphrase is in no browser storage; after a reload it is asked again.
     const stored = await page.evaluate(async () => {
@@ -130,14 +147,21 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
         all.onsuccess = () => { for (const record of all.result) store.put({ ...record, expiresAt: Date.now() }); store.transaction.oncomplete = done; };
       };
     }));
-    // A link from a Tabularius citation goes straight to the vault's unlock form, then opens the note.
+    // Leaving web notes for another module stops its synchronisation; coming back asks for the passphrase again.
+    await page.getByRole('link', { name: '首页', exact: true }).click();
+    await expect(page.locator('.home-vault').first()).toBeVisible();
+    await expect.poll(() => page.evaluate(async () => (await (await fetch('/api/v1/admin/overview')).json()).activeProxyConnections)).toBe(0);
+    await page.getByRole('link', { name: '云笔记', exact: true }).click();
+    await page.getByRole('button', { name: vault.name, exact: true }).click();
+    await expect(page.getByLabel('E2EE 密码短语')).toBeVisible();
+    // A link from a Tabularius citation or the home page goes straight to the vault's unlock form, then opens the note.
     await page.goto('about:blank');
-    await page.goto(`${url}/notes/#${vault.id}/${encodeURIComponent('笔记')}/${encodeURIComponent('中文.md')}`);
+    await page.goto(`${url}/notes/?vault=${vault.id}&path=${encodeURIComponent('笔记/中文.md')}`);
     await page.getByLabel('E2EE 密码短语').fill(passphrase);
     await page.getByRole('button', { name: '解锁' }).click();
-    await expect(page.getByText('本地明文副本')).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.vault-more')).toBeVisible({ timeout: 60_000 });
     await expect(article.getByRole('heading', { name: '中文笔记' })).toBeVisible();
-    assert.equal(new URL(page.url()).hash, '');
+    assert.equal(new URL(page.url()).search, '');
     const renewed = await page.evaluate(() => new Promise(done => {
       const request = indexedDB.open('tabularium-notes');
       request.onsuccess = () => { const all = request.result.transaction('vaults').objectStore('vaults').getAll(); all.onsuccess = () => done(all.result[0].expiresAt); };
@@ -145,9 +169,25 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     assert(renewed > Date.now() + 29 * 86_400_000, 'browser device renewed on unlock');
     assert.equal((await api(`/vaults/${vault.id}/devices`)).find(d => d.id === browserDevice.id).expiresAt, renewed);
 
+    // A rebuilt vault stays locked: the page explains it and opens again once the owner unlocks it in account settings.
+    await page.locator('.vault-more').click();
+    await page.getByRole('menuitem', { name: '锁定' }).click();
+    const milestone = `${url}/sync/${vault.id}/_local/obsydian_livesync_milestone`;
+    const deviceAuth = { authorization: `Basic ${Buffer.from(`${device.username}:${device.password}`).toString('base64')}`, 'content-type': 'application/json' };
+    const current = await (await fetch(milestone, { headers: deviceAuth })).json();
+    assert((await fetch(milestone, { method: 'PUT', headers: deviceAuth, body: JSON.stringify({ ...current, locked: true }) })).ok);
+    await page.getByLabel('E2EE 密码短语').fill(passphrase);
+    await page.getByRole('button', { name: '解锁' }).click();
+    await expect(page.getByText('请所有者在账户设置的笔记库页面解除锁定')).toBeVisible({ timeout: 60_000 });
+    await api(`/vaults/${vault.id}/rebuild/lock`, 'DELETE');
+    await page.getByRole('button', { name: '解锁' }).click();
+    await expect(page.locator('.vault-more')).toBeVisible({ timeout: 60_000 });
+
     // Multiple selection sends one book per item.
-    await page.getByRole('button', { name: '▸ 笔记' }).click();
-    await page.getByRole('button', { name: '▸ 子' }).click();
+    const notesFolder = page.getByRole('button', { name: '笔记', exact: true });
+    if (await notesFolder.getAttribute('aria-expanded') !== 'true') await notesFolder.click();
+    await page.getByRole('button', { name: '中文', exact: true }).click();
+    await page.getByRole('button', { name: '子', exact: true }).click();
     await page.locator('.row', { has: page.getByRole('button', { name: '中文', exact: true }) }).getByRole('button', { name: '更多操作' }).click();
     await page.getByRole('menuitem', { name: '多选…' }).click();
     await page.getByLabel('选择 子').check();
@@ -162,7 +202,9 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     assert(parseMessage(sink.messages[0].raw).data.includes(png), 'image packed into the web-built book');
 
     // Clearing removes the local replica and revokes the browser's device.
-    await page.getByRole('button', { name: '清除本地数据' }).click();
+    await page.locator('.vault-more').click();
+    await page.getByRole('menuitem', { name: '清除本地数据' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '清除本地数据', exact: true }).click();
     await expect(page.getByText('本地数据已清除，设备已撤销。')).toBeVisible({ timeout: 30_000 });
     const left = await page.evaluate(async id => {
       const names = (await indexedDB.databases()).map(d => d.name).filter(name => name.includes(id));

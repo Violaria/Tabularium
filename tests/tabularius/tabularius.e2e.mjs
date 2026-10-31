@@ -125,7 +125,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await expect(answer.locator('.answer')).toContainText('根据', { timeout: 60_000 });
     await expect(answer.locator('.tools')).toContainText('检索：紫藤服务器');
     await expect(answer.locator('.tools')).toContainText('读取：运维/紫藤服务器.md');
-    const href = `/notes/#${vault.id}/${encodeURIComponent('运维')}/${encodeURIComponent('紫藤服务器.md')}`;
+    const href = `/notes/?vault=${vault.id}&path=${encodeURIComponent('运维/紫藤服务器.md')}`;
     await expect(answer.locator('.answer a.cite')).toHaveAttribute('href', href);
     await expect(page.locator('.conversation')).toHaveCount(1);
     // A second question in the same conversation.
@@ -201,8 +201,9 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await expect(page.locator('.diff .add')).toContainText(['+# 运维索引', '+- [紫藤服务器](服务器/紫藤.md)', '+- [[紫藤]]']);
     await expect(page.getByText('请不要在其他设备上编辑这些笔记')).toBeVisible();
     appliedAt = Date.now();
-    page.once('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: '应用', exact: true }).click();
+    // The application's own confirmation dialog names the action on its button.
+    await page.getByRole('dialog').getByRole('button', { name: '应用', exact: true }).click();
     await expect(page.getByText('已应用，改动正在同步到各设备。')).toBeVisible();
     assert.equal(db.prepare("SELECT action FROM audit_events WHERE action LIKE 'tabularius.apply'").all().length, 1);
 
