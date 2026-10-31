@@ -155,6 +155,31 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await expect(page.locator('.turn.assistant')).toHaveCount(2);
     await expect(page.locator('.turn.assistant').last().locator('.answer')).toContainText('根据', { timeout: 60_000 });
     await expect(page.locator('.conversation')).toHaveCount(1);
+    // Attachments: a picture and a configuration file go with a question. The model gets the picture as an image and the
+    // file as masked text; the message shows both, also after the conversation is opened again.
+    const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    await page.locator('#attach-input').setInputFiles([{ name: '截图.png', mimeType: 'image/png', buffer: picture },
+      { name: 'app.conf', mimeType: 'text/plain', buffer: Buffer.from('host = 紫藤\npassword: hunter2\n') }]);
+    await expect(page.locator('#attachments .attachment:not(.loading)')).toHaveCount(2, { timeout: 30_000 });
+    await expect(page.locator('#attachments .attachment.failed')).toHaveCount(0);
+    await page.screenshot({ path: join(shots, 'attachments.png') });
+    const beforeAttachments = mock.requests.anthropic.length;
+    await page.getByPlaceholder('询问你的笔记').fill('附件 紫藤服务器');
+    await page.getByRole('button', { name: '发送' }).click();
+    await expect(page.locator('.turn.assistant')).toHaveCount(3);
+    await expect(page.locator('.turn.assistant').last().locator('.answer')).toContainText(/根据|笔记里没有/, { timeout: 60_000 });
+    const withFiles = mock.requests.anthropic[beforeAttachments].body.messages.at(-1).content;
+    assert.deepEqual(withFiles[0], { type: 'image', source: { type: 'base64', media_type: 'image/png', data: picture.toString('base64') } });
+    assert.equal(withFiles[1].text, 'Attached file: app.conf\n\nhost = 紫藤\npassword: [REDACTED]\n');
+    assert.equal(withFiles[2].text, '附件 紫藤服务器');
+    await expect(page.locator('#attachments .attachment')).toHaveCount(0);
+    await page.reload();
+    await page.locator('.conversation').first().click();
+    const sentFiles = page.locator('#log .turn.user').nth(2);
+    await expect(sentFiles.locator('.sent-image img')).toHaveCount(1);
+    await expect(sentFiles.locator('.attachment')).toHaveText('app.conf');
+    assert.equal(await sentFiles.locator('.sent-image img').evaluate(img => img.naturalWidth), 1, 'the picture loads from the server');
+    await page.screenshot({ path: join(shots, 'attachments-sent.png') });
 
     // The first start made the default model the default recipe, named after it; the overview lists recipes, not models.
     const overview = await api('/tabularius');
@@ -175,11 +200,16 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await settingsDialog.getByRole('button', { name: '取消' }).click();
     // LLM settings for administrators: providers with the models their APIs list, keys shown by their last four characters, then recipes.
     await page.goto(`${url}/admin/ai`);
-    await expect(page.locator('form.provider')).toHaveCount(3);
-    await expect(page.locator('form.provider[data-provider="anthropic"] input[name="key"]')).toHaveAttribute('placeholder', /opic/);
-    await expect(page.locator('form.provider[data-provider="anthropic"] [data-models]')).toContainText('Claude Opus 5.5');
-    await expect(page.locator('form.provider[data-provider="openai"] input[name="model"]')).toHaveCount(1);
-    await expect(page.locator('form.provider[data-provider="vllm"] input[name="model"]:checked')).toHaveValue('esmeralda');
+    await expect(page.locator('details.llm-provider')).toHaveCount(3);
+    await expect(page.locator('details.llm-provider[data-provider="anthropic"] input[name="key"]')).toHaveAttribute('placeholder', /opic/);
+    // The list from the provider's API comes on request: open the provider and fetch it.
+    const anthropicItem = page.locator('details.llm-provider[data-provider="anthropic"]');
+    await anthropicItem.locator('summary').click();
+    await anthropicItem.getByRole('button', { name: '获取模型列表' }).click();
+    await expect(anthropicItem.locator('[data-models]')).toContainText('Claude Opus 5.5');
+    await expect(anthropicItem.locator('.model-row', { hasText: 'Claude Opus 5.5' }).locator('input[name="vision"]')).toBeChecked();
+    await expect(page.locator('details.llm-provider[data-provider="openai"] input[name="model"]')).toHaveCount(1);
+    await expect(page.locator('details.llm-provider[data-provider="vllm"] input[name="model"]:checked')).toHaveValue('esmeralda');
     const recipeItems = page.locator('#recipes details.llm-recipe');
     await expect(recipeItems).toHaveCount(1);
     await expect(recipeItems.first().locator('summary')).toContainText('默认');
@@ -192,8 +222,11 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     const temperature = added.locator('[data-param="temperature"]');
     await temperature.getByRole('button', { name: /默认/ }).click();
     await temperature.locator('input[type="number"]').fill('5');
+    // Out of range: the browser's own form check stops the save at the number box.
     await added.getByRole('button', { name: '保存', exact: true }).click();
-    await expect(page.locator('.toast.error')).toContainText('取值范围为 0 到 2');
+    assert.equal(await temperature.locator('input[type="number"]').evaluate(input => input.validity.rangeOverflow), true);
+    await expect(recipeItems).toHaveCount(2);
+    assert.equal((await api('/tabularius/settings')).recipes.length, 1, 'nothing is saved');
     await temperature.locator('input[type="number"]').fill('0.3');
     await added.getByRole('button', { name: '保存', exact: true }).click();
     await expect(page.locator('.toast', { hasText: '已保存' })).toBeVisible();
@@ -238,6 +271,18 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await api('/me/password', 'PUT', { currentPassword: 'other-initial-password', password: 'other-second-password' }, otherToken);
     otherToken = (await api('/sessions', 'POST', { username: 'other', password: 'other-second-password' }, null)).token;
     assert.equal((await call(`/tabularius/conversations/${conversation.id}`, 'GET', undefined, otherToken)).status, 404);
+    const attachmentId = (await api(`/tabularius/conversations/${conversation.id}`)).messages.find(m => m.attachments).attachments[0].id;
+    assert.equal((await call(`/tabularius/attachments/${attachmentId}`, 'GET', undefined, otherToken)).status, 404);
+    assert((await call(`/tabularius/attachments/${attachmentId}`)).ok);
+    // A picture is refused for a model not marked as reading images (local models by default); a text file is not.
+    const upload = (name, data) => fetch(`${url}/api/v1/tabularius/vaults/${vault.id}/attachments`, { method: 'POST', body: data,
+      headers: { authorization: `Bearer ${token}`, 'x-file-name': encodeURIComponent(name), 'content-type': 'application/octet-stream' } }).then(r => r.json());
+    const localRecipe = (await api('/tabularius')).recipes.find(recipe => recipe.provider === 'vllm');
+    assert.equal(localRecipe.vision, false);
+    const refused = await call(`/tabularius/vaults/${vault.id}/conversations`, 'POST', { message: '看图', recipe: localRecipe.id, attachments: [(await upload('a.png', picture)).id] });
+    assert.equal(refused.status, 400);
+    assert.match((await refused.json()).error, /does not read images/);
+    assert.equal((await upload('blob.bin', Buffer.from([0, 1, 2, 255]))).error, 'Not a text file');
     assert.equal((await call(`/tabularius/vaults/${vault.id}/conversations`, 'GET', undefined, otherToken)).status, 404);
     assert(other.id);
 
@@ -268,7 +313,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     const propose = async input => {
       await page.getByPlaceholder('询问你的笔记').fill(`PROPOSE ${JSON.stringify(input)}`);
       await page.getByRole('button', { name: '发送' }).click();
-      await expect(page.locator('#ask button')).toBeEnabled({ timeout: 60_000 });
+      await expect(page.locator('#ask button.send')).toBeEnabled({ timeout: 60_000 });
       return page.locator('.turn.assistant').last();
     };
     let turn = await propose({ title: '无效', summary: '', changes: [{ op: 'edit', path: '运维/紫藤服务器.md', edits: [{ old: '不存在的文字', new: 'x' }] }] });
@@ -389,6 +434,11 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     // The web with Claude: server-side search, a paused turn continued unchanged, cited sources and an activity record.
     assert(mock.requests.anthropic.every(r => !r.body.tools.some(tool => tool.type?.startsWith('web_'))), 'no web tools while the web is off');
     await api(`/tabularius/vaults/${vault.id}/web`, 'PUT', { enabled: true });
+    // The vault allows the web; a conversation uses it only once it is switched on there.
+    const quiet = mock.requests.anthropic.length;
+    await ask('KB 银杏');
+    assert(mock.requests.anthropic.slice(quiet).every(r => !r.body.tools.some(tool => tool.type?.startsWith('web_'))), 'no web tools until the conversation switches web search on');
+    assert.equal((await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { web: true })).web, true);
     const anthropicBefore = mock.requests.anthropic.length;
     let web = await ask('WEB 最新版本');
     assert.match(web.stream, /event: tool\ndata: {"name":"web_search","input":{"query":"最新版本"}}/);
@@ -460,7 +510,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
       await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'restricted' });
       // A lower server limit caps the vault's mode at once, without changing what the vault chose.
       const limits = (await api('/tabularius/settings')).limits;
-      assert.deepEqual(limits, { modeLimit: 'restricted', sshTimeout: 60, sandboxImages: ['alpine:3'] });
+      assert.deepEqual(limits, { modeLimit: 'restricted', sshTimeout: 60, sandboxImages: ['alpine:3'], attachmentMegabytes: 20 });
       await api('/tabularius/settings', 'PUT', { limits: { ...limits, modeLimit: 'read-only' } });
       assert.equal((await status()).mode, 'read-only');
       assert.deepEqual((await api('/tabularius')).modes, ['read-only']);
@@ -598,7 +648,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.match((await ask('WEB 版本')).answer, /address this mode does not allow/);
     assert.equal(mock.requests.page.length, 1);
     const transcript = await api(`/tabularius/conversations/${conversation.id}`);
-    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|SNIPPET|LOOP|REMEMBER|SSH|SANDBOX) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
+    assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|SNIPPET|LOOP|REMEMBER|SSH|SANDBOX) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '附件 紫藤服务器', '银杏节点']);
     assert.deepEqual(transcript.messages.flatMap(m => m.tools ?? []).filter(tool => tool.proposal).map(tool => tool.proposal.status), ['applied', 'applied', 'discarded']);
 
     // AI settings: administrators only; keys are sealed in the database and shown by their last four characters.

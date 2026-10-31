@@ -173,14 +173,16 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
         all.onsuccess = () => { for (const record of all.result) store.put({ ...record, expiresAt: Date.now() }); store.transaction.oncomplete = done; };
       };
     }));
-    // Leaving web notes for another module stops its synchronisation; coming back asks for the passphrase again.
+    // Leaving web notes for another module stops its synchronisation; coming back in the same page opens the vault again
+    // without asking, since the page keeps the passphrase in memory (never in storage, as checked above).
     await page.getByRole('link', { name: '首页', exact: true }).click();
     await expect(page.locator('.home-vault').first()).toBeVisible();
     await expect.poll(() => page.evaluate(async () => (await (await fetch('/api/v1/admin/overview')).json()).activeProxyConnections)).toBe(0);
     await page.getByRole('link', { name: '云笔记', exact: true }).click();
-    await page.getByRole('button', { name: vault.name, exact: true }).click();
-    await expect(page.getByLabel('E2EE 密码短语')).toBeVisible();
-    // A link from a Tabularius citation or the home page goes straight to the vault's unlock form, then opens the note.
+    await expect(page.locator('.vault-more')).toBeVisible({ timeout: 60_000 });
+    assert.equal(await page.getByLabel('E2EE 密码短语').count(), 0);
+    // In a new page a link from a Tabularius citation or the home page goes straight to the vault's unlock form, then
+    // opens the note.
     await page.goto('about:blank');
     await page.goto(`${url}/notes/?vault=${vault.id}&path=${encodeURIComponent('笔记/中文.md')}`);
     await page.getByLabel('E2EE 密码短语').fill(passphrase);
