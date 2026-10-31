@@ -204,6 +204,12 @@ export async function startMockProviders() {
       }
       if (!sessions.has(session)) { res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32001, message: 'Session not found' }, id: null })); return; }
       if (body.id === undefined) { res.writeHead(202).end(); return; }
+      if (body.params?.name === 'ragflow_list_datasets') {
+        const text = [{ id: 'ds-ops', name: '运维笔记', description: '服务运维' }, { id: 'ds-notes', name: '其他笔记', description: '其余' }].map(item => JSON.stringify(item)).join('\n');
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: false, content: [{ type: 'text', text }] } }));
+        return;
+      }
       const chunks = knowledge.filter(chunk => chunk.content.includes(body.params.arguments.question) || body.params.arguments.question.includes(chunk.key));
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: false, content: [{ type: 'text', text: JSON.stringify({ chunks }) }] } }));

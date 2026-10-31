@@ -13,8 +13,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { createGateway } from '../../apps/server/dist/server.js';
-import { anthropic, embedder, openai, vllm } from '../../apps/server/dist/tabularius/providers.js';
-import { ragflow } from '../../apps/server/dist/tabularius/knowledge.js';
+import { embedder } from '../../apps/server/dist/tabularius/providers.js';
 import { serveSandbox } from '../../apps/server/dist/sandbox.js';
 import { startMockProviders } from './mock-providers.mjs';
 
@@ -44,18 +43,25 @@ test('Tabularius', { timeout: 900_000 }, async () => {
   // The sandbox service against this host's Docker, with the one image the tests have locally.
   const sandboxToken = randomBytes(24).toString('hex');
   const sandbox = await serveSandbox({ socket: '/var/run/docker.sock', images: ['alpine:3'], token: sandboxToken, port: 0, host: '127.0.0.1' });
-  process.env.ANTHROPIC_BASE_URL = mock.url; process.env.ANTHROPIC_API_KEY = 'test-anthropic';
-  process.env.OPENAI_BASE_URL = `${mock.url}/v1`; process.env.OPENAI_API_KEY = 'test-openai';
+  // The SDKs reach the stand-ins through their base URLs; the keys come from the AI settings, not the environment.
+  process.env.ANTHROPIC_BASE_URL = mock.url; delete process.env.ANTHROPIC_API_KEY;
+  process.env.OPENAI_BASE_URL = `${mock.url}/v1`; delete process.env.OPENAI_API_KEY;
   const database = join(temp, 'app.sqlite');
   const key = randomBytes(32);
   let gateway, browser, couchUrl;
   const syncPassword = randomBytes(24).toString('hex');
-  const start = async (provider, embeddingModel = 'test-embed', blocked = []) => {
+  // What the environment would configure, imported on the first start only; later starts keep the web settings.
+  const initial = {
+    providers: { anthropic: { key: 'test-anthropic', models: ['claude-opus-5-5'] }, openai: { key: 'test-openai', models: ['gpt-test'] },
+      vllm: { url: `${mock.url}/v1`, models: ['esmeralda'], context: 6000 } },
+    defaultModel: 'anthropic/claude-opus-5-5', knowledge: { url: `${mock.url}/mcp`, datasets: ['ds-ops', 'ds-notes'] },
+  };
+  const start = async (embeddingModel = 'test-embed', blocked = []) => {
     gateway = await createGateway({ database, bootstrapUser: 'admin', bootstrapPassword: password, origins: [],
       couch: { url: couchUrl, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword },
-      tabularius: { key, root: join(temp, 'tabularius'), cli: cliPath, provider,
-        embedder: embedder(embeddingModel, `${mock.url}/v1`, 'test-embed-key', 4), knowledge: ragflow(`${mock.url}/mcp`, ['ds-ops', 'ds-notes']),
-        web: { options: { allowed: [], blocked, maxUses: 3 }, searxng: mock.url, intranet: ['127.0.0.1'] }, modeLimit: 'restricted', params: {},
+      tabularius: { key, root: join(temp, 'tabularius'), cli: cliPath, initial,
+        embedder: embedder(embeddingModel, `${mock.url}/v1`, 'test-embed-key', 4),
+        web: { options: { allowed: [], blocked, maxUses: 3 }, searxng: mock.url, intranet: ['127.0.0.1'] }, modeLimit: 'restricted',
         sandbox: { url: `http://127.0.0.1:${sandbox.port}`, token: sandboxToken, images: ['alpine:3'] } } });
     return gateway.listen();
   };
@@ -63,7 +69,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await compose('up', '-d', '--wait');
     await exec('docker', ['build', '-q', '-t', 'tabularius-test-sshd', join(root, 'tests/tabularius/sshd')], { timeout: 300_000 });
     couchUrl = `http://${(await compose('port', 'couchdb', '5984')).stdout.trim()}`;
-    let url = await start(anthropic('claude-opus-5-5'));
+    let url = await start();
     let token;
     const call = async (path, method = 'GET', body, as = token) => fetch(`${url}/api/v1${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body),
       headers: { 'content-type': 'application/json', ...(as ? { authorization: `Bearer ${as}` } : {}) } });
@@ -108,6 +114,13 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     const status = async () => (await api('/tabularius')).vaults.find(v => v.id === vault.id);
     await until('the hosted client to fetch and index the vault', async () => { const s = await status(); return s.replicated && s.notes === 2 && s; });
     assert.equal(db.prepare('SELECT passphrase FROM tabularius_vaults').get().passphrase.includes(Buffer.from(passphrase)), false, 'the passphrase is stored encrypted');
+    // The vault's Tabularius.md is no longer read on its own: its owner imports it, masked, into the vault prompt.
+    assert.doesNotMatch((await api(`/tabularius/vaults/${vault.id}/prompt`)).full, /本库的规范/);
+    const imported = (await api(`/tabularius/vaults/${vault.id}/prompt/import`, 'POST', {})).prompt;
+    assert.match(imported, /本库的规范/);
+    await api(`/tabularius/vaults/${vault.id}/prompt`, 'PUT', { prompt: imported });
+    const preview = await api(`/tabularius/vaults/${vault.id}/prompt`);
+    assert(preview.full.startsWith(preview.server.trim()) && preview.full.indexOf(preview.fixed) > preview.server.trim().length && preview.full.endsWith('本库的规范：回答用中文。'), 'server prompt, fixed part, vault prompt in order');
 
     // Chat in the browser: a streamed answer citing the note, with a link to web notes.
     browser = await chromium.launch({ headless: true });
@@ -143,12 +156,47 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await expect(page.locator('.turn.assistant').last().locator('.answer')).toContainText('根据', { timeout: 60_000 });
     await expect(page.locator('.conversation')).toHaveCount(1);
 
+    // The conversation's model and settings in its header; parameters as a form, not JSON.
+    await expect(page.locator('#chat-model')).toHaveValue('anthropic/claude-opus-5-5');
+    assert.deepEqual(await page.locator('#chat-model option').allTextContents(), ['anthropic/claude-opus-5-5', 'openai/gpt-test', 'vllm/esmeralda']);
+    await page.getByRole('button', { name: '对话设置' }).click();
+    const settingsDialog = page.locator('dialog.chat-settings');
+    const effort = settingsDialog.locator('[data-param="effort"]');
+    await expect(effort).toContainText('推理努力');
+    await effort.getByRole('button', { name: /默认/ }).click();
+    await expect(effort.locator('select')).toHaveValue('medium');
+    await page.screenshot({ path: join(shots, 'chat-settings.png') });
+    await settingsDialog.getByRole('button', { name: '取消' }).click();
+    // AI settings for administrators: keys shown by their last four characters.
+    await page.goto(`${url}/admin/ai`);
+    await expect(page.locator('form.provider')).toHaveCount(3);
+    await expect(page.locator('form.provider[data-provider="anthropic"] input[name="key"]')).toHaveAttribute('placeholder', /opic/);
+    await expect(page.locator('#default-model')).toHaveValue('anthropic/claude-opus-5-5');
+    await page.screenshot({ path: join(shots, 'ai-settings.png'), fullPage: true });
+    // The vault's settings: prompt, default model and the parameter form, with the vLLM temperature set by its slider.
+    await page.goto(`${url}/tabularius/?vault=${vault.id}`);
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await expect(page.locator('#vault-prompt textarea')).toHaveValue(/本库的规范/);
+    await page.locator('details.param-provider', { hasText: 'vllm' }).locator('summary').click();
+    const temperature = page.locator('[data-params="vllm"] [data-param="temperature"]');
+    await temperature.getByRole('button', { name: /默认/ }).click();
+    await temperature.locator('input[type="number"]').fill('5');
+    await page.locator('#save-params').click();
+    await expect(page.locator('.toast.error')).toContainText('取值范围为 0 到 2');
+    await temperature.locator('input[type="number"]').fill('0.3');
+    await page.locator('#save-params').click();
+    await expect(page.locator('.toast', { hasText: '已保存' })).toBeVisible();
+    assert.deepEqual((await status()).params.vllm, { temperature: 0.3 });
+    await page.screenshot({ path: join(shots, 'vault-settings.png'), fullPage: true });
+    await page.locator('.conversation').first().click();
+    await expect(page.locator('#log .turn.user').first()).toBeVisible();
     // What reached the provider: no excluded note, no credentials, the vault's rules, and thinking replayed unchanged.
     const sent = [...mock.requests.anthropic.map(r => r.raw), ...mock.requests.embeddings.map(r => r.raw)].join('\n');
     for (const secret of ['secretdiary', '私密日记', 'hunter2', 'sk-abcdefghijklmnop', 'ZETA-42']) assert(!sent.includes(secret), `${secret} reached a provider`);
     assert(mock.requests.anthropic.some(r => r.raw.includes('[REDACTED]')));
     const first = mock.requests.anthropic[0];
     assert.match(JSON.stringify(first.body.system), /本库的规范/);
+    assert.equal(first.headers.authorization, 'Bearer test-anthropic', 'the key from the AI settings');
     assert.equal(first.body.fallbacks, 'default');
     assert.match(first.headers['anthropic-beta'], /server-side-fallback-2026-07-01/);
     const last = mock.requests.anthropic.at(-1).body;
@@ -282,7 +330,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.match(kb, /\[\[运维\/服务器\/紫藤.md\]\]/, 'a document present in the vault is cited as a note');
     assert.match(kb, /Knowledge base 运维笔记: 服务运维\/银杏备用.md/);
     assert.doesNotMatch(kb, /kbdiary|私密/);
-    assert.deepEqual(mock.requests.mcp.find(r => r.body.method === 'tools/call').body.params.arguments, { question: '银杏', dataset_ids: ['ds-ops', 'ds-notes'], page_size: 8 });
+    assert.deepEqual(mock.requests.mcp.find(r => r.body.method === 'tools/call').body.params.arguments, { question: '银杏', dataset_ids: ['ds-ops', 'ds-notes'], page_size: 8, similarity_threshold: 0.2, vector_similarity_weight: 0.7, keyword: false, top_k: 1024 }, 'the default retrieval settings');
     // RAGFlow restarted: the next call reconnects once.
     mock.restart();
     assert.match((await ask('KB 银杏')).answer, /备用说明/);
@@ -295,8 +343,9 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.equal((await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'restricted' })).mode, 'restricted');
     assert.deepEqual((await api('/tabularius')).modes, ['read-only', 'restricted']);
     assert.deepEqual((await api('/tabularius', 'GET', undefined, otherToken)).modes, ['read-only']);
-    assert.equal((await call(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: '{"temperature": 0.5}' })).status, 400, 'Claude takes no sampling parameters');
-    await api(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: '{"effort": "high"}' });
+    assert.equal((await call(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: { anthropic: { temperature: 0.5 } } })).status, 400, 'Claude takes no sampling parameters');
+    assert.equal((await call(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: { vllm: { messages: [] } } })).status, 400, 'reserved fields cannot be custom parameters');
+    await api(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: { anthropic: { effort: 'high' }, vllm: { temperature: 0.3, enable_thinking: false, min_tokens: 2 } } });
 
     // The web with Claude: server-side search, a paused turn continued unchanged, cited sources and an activity record.
     assert(mock.requests.anthropic.every(r => !r.body.tools.some(tool => tool.type?.startsWith('web_'))), 'no web tools while the web is off');
@@ -314,7 +363,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     const shown = (await api(`/tabularius/conversations/${conversation.id}`)).messages.at(-1);
     assert.deepEqual(shown.sources, [{ url: 'https://example.com/release', title: 'Release notes' }]);
     assert.equal(shown.text, '最新版本是 2.0。');
-    await api(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: '' });
+    await api(`/tabularius/vaults/${vault.id}/params`, 'PUT', { params: { vllm: { temperature: 0.3, enable_thinking: false, min_tokens: 2 } } });
 
     // Memories: Tabularius stores one when asked, a new conversation starts with it, and only its owner can see or change it.
     assert.match((await ask('REMEMBER 回答用繁体中文')).answer, /Remembered as/);
@@ -423,15 +472,17 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.equal((await exec('docker', ['ps', '-aq', '--filter', 'label=tabularius.sandbox'])).stdout.trim(), '', 'no sandbox container is left');
     assert(db.prepare("SELECT count(*) AS n FROM tabularius_commands WHERE host_id='sandbox'").get().n >= 5);
 
-    // Restart with the other provider: the client resumes without the passphrase and the conversation continues.
+    // Restart with another embedding model, then switch the conversation to OpenAI: it continues with the earlier turns as context.
     await page.close();
     await gateway.close();
-    url = await start(openai('gpt-test'), 'test-embed-2');
+    url = await start('test-embed-2');
     await until('the hosted client to resume', async () => (await status()).replicated);
     // A different embedding model rebuilds the index with its own vectors.
     await until('the index to be rebuilt with the new model', () => db.prepare('SELECT embedding_model FROM tabularius_vaults').get()?.embedding_model === 'test-embed-2' && db.prepare('SELECT count(*) AS n FROM tabularius_chunks').get().n > 0);
     assert(mock.requests.embeddings.some(r => r.body.model === 'test-embed-2'));
     assert(mock.requests.embeddings.every(r => r.body.input.length <= 4), 'embedding requests respect the batch size');
+    assert.equal((await call(`/tabularius/conversations/${conversation.id}`, 'PATCH', { model: 'openai/none' })).status, 400);
+    assert.equal((await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { model: 'openai/gpt-test' })).model, 'openai/gpt-test');
     const stream = await (await call(`/tabularius/conversations/${conversation.id}/messages`, 'POST', { message: '银杏节点' })).text();
     assert.match(stream, /event: tool\ndata: {"name":"search_notes"/);
     assert.match(stream, /event: done\ndata: {"read":\["运维\/服务器\/紫藤.md"\],"sources":\[\]}/);
@@ -439,6 +490,9 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert(openaiSent.includes('银杏节点') && !openaiSent.includes('hunter2') && !openaiSent.includes('secretdiary'));
     // The Responses API: instructions carry the system prompt, encrypted reasoning items are replayed, OpenAI searches the web itself.
     assert.match(mock.requests.openai[0].body.instructions, /本库的规范/);
+    assert.equal(mock.requests.openai[0].headers.authorization, 'Bearer test-openai');
+    assert(!JSON.stringify(mock.requests.openai[0].body.input).includes('sig-1'), "Claude's thinking is not replayed to OpenAI");
+    assert(JSON.stringify(mock.requests.openai[0].body.input).includes('紫藤服务器'), 'the earlier turns are context');
     assert.equal(mock.requests.openai[0].body.store, false);
     assert.equal(mock.requests.openai[0].body.truncation, 'auto');
     assert(mock.requests.openai.at(-1).body.input.some(item => item.type === 'reasoning' && item.encrypted_content === 'enc-1'), 'reasoning items are replayed');
@@ -450,13 +504,17 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     // vLLM: reasoning goes back on assistant messages; the web through SearXNG and the server's fetch, by permission mode.
     await gateway.close();
     // A small context window makes the long history drop its earliest exchanges.
-    url = await start(vllm('esmeralda', `${mock.url}/v1`, undefined, 6000), 'test-embed-2', ['blocked.example.org']);
+    url = await start('test-embed-2', ['blocked.example.org']);
     await until('the hosted client to resume', async () => (await status()).replicated);
+    await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { model: 'vllm/esmeralda', prompt: '本对话只谈运维。' });
     web = await ask('WEB 版本');
     assert.match(web.answer, /版本 2.0\n+2026 年发布 & 支持 bge-m3。/);
     assert.doesNotMatch(web.answer, /ignore\(\)/);
     assert.match(web.stream, /"sources":\[{"url":"http:\/\/127.0.0.1:\d+\/page","title":"发布说明"}\]/);
     const vllmLast = mock.requests.vllm.at(-1).body;
+    // The vault's vLLM parameters, the thinking switch as a chat-template argument, and the conversation's extra prompt.
+    assert.deepEqual([vllmLast.temperature, vllmLast.min_tokens, vllmLast.chat_template_kwargs], [0.3, 2, { enable_thinking: false }]);
+    assert.match(vllmLast.messages[0].content, /本对话只谈运维。$/);
     assert(vllmLast.messages.some(m => m.role === 'assistant' && m.reasoning === 'thinking-1'), 'reasoning is replayed to vLLM');
     assert(vllmLast.tools.some(tool => tool.function.name === 'fetch_url'));
     assert.match(vllmLast.messages[1].content, /left out to fit the context window/);
@@ -482,6 +540,30 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     const transcript = await api(`/tabularius/conversations/${conversation.id}`);
     assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|SNIPPET|LOOP|REMEMBER|SSH|SANDBOX) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '银杏节点']);
     assert.deepEqual(transcript.messages.flatMap(m => m.tools ?? []).filter(tool => tool.proposal).map(tool => tool.proposal.status), ['applied', 'applied', 'discarded']);
+
+    // AI settings: administrators only; keys are sealed in the database and shown by their last four characters.
+    assert.equal((await call('/tabularius/settings', 'GET', undefined, otherToken)).status, 403);
+    const settingsView = await api('/tabularius/settings');
+    assert.equal(settingsView.providers.anthropic.keyHint, 'opic');
+    assert(!JSON.stringify(settingsView).includes('test-anthropic') && !JSON.stringify(settingsView).includes('test-openai'));
+    assert(!db.prepare('SELECT group_concat(value) AS v FROM tabularius_settings').get().v.includes('test-anthropic'), 'keys are sealed');
+    await api('/tabularius/settings', 'PUT', { providers: { openai: { key: 'replaced-openai-key' } }, defaultModel: 'openai/gpt-test' });
+    assert.equal((await api('/tabularius')).defaultModel, 'openai/gpt-test');
+    const openaiBefore = mock.requests.openai.length;
+    assert.equal((await api('/tabularius/settings/test', 'POST', { model: 'openai/gpt-test' })).ok, true);
+    assert.equal(mock.requests.openai[openaiBefore].headers.authorization, 'Bearer replaced-openai-key', 'a new key applies without a restart');
+    assert.equal((await call('/tabularius/settings', 'PUT', { params: { anthropic: { temperature: 1 } } })).status, 400);
+    assert.equal((await call('/tabularius/settings', 'PUT', { providers: { vllm: { url: 'not a url' } } })).status, 400);
+    assert.deepEqual((await api('/tabularius/settings/datasets', 'POST', { url: `${mock.url}/mcp` })).map(d => d.id), ['ds-ops', 'ds-notes']);
+    await api('/tabularius/settings', 'PUT', { knowledge: { ...settingsView.knowledge, datasets: ['ds-ops'], limit: 3, threshold: 0.4 } });
+    const mcpBefore = mock.requests.mcp.length;
+    await api('/tabularius/settings/knowledge', 'POST', { question: '银杏' });
+    const retrieval = mock.requests.mcp.slice(mcpBefore).find(r => r.body.params?.name === 'ragflow_retrieval').body.params.arguments;
+    assert.deepEqual([retrieval.dataset_ids, retrieval.page_size, retrieval.similarity_threshold], [['ds-ops'], 3, 0.4]);
+    // A new conversation starts with the model chosen for it.
+    const started = await (await call(`/tabularius/vaults/${vault.id}/conversations`, 'POST', { message: '紫藤服务器', model: 'vllm/esmeralda' })).text();
+    const startedId = JSON.parse(/event: conversation\ndata: (.*)/.exec(started)[1]).id;
+    assert.equal((await api(`/tabularius/conversations/${startedId}`)).model, 'vllm/esmeralda');
 
     // Disabling removes everything the server held for this vault.
     await api(`/tabularius/vaults/${vault.id}`, 'DELETE');

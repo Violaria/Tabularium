@@ -13,8 +13,7 @@ import { join, relative, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createGateway } from '../../apps/server/dist/server.js';
-import { anthropic, embedder, openai, vllm } from '../../apps/server/dist/tabularius/providers.js';
-import { ragflow } from '../../apps/server/dist/tabularius/knowledge.js';
+import { embedder } from '../../apps/server/dist/tabularius/providers.js';
 import { createFilter } from '../../apps/server/dist/tabularius/filter.js';
 
 const exec = promisify(execFile);
@@ -83,9 +82,15 @@ try {
   gateway = await createGateway({ database, bootstrapUser: 'admin', bootstrapPassword: password, origins: [],
     couch: { url: couchUrl, adminUser: 'baseline', adminPassword: password, syncUser: 'tabularium', syncPassword: randomBytes(24).toString('hex') },
     tabularius: { key: randomBytes(32), root: join(temp, 'tabularius'), cli: cliPath,
-      provider: providerName === 'openai' ? openai(model) : providerName === 'anthropic' ? anthropic(model) : vllm(model, `http://127.0.0.1:${proxy.address().port}/v1`, env('TABULARIUS_VLLM_KEY'), 65_536),
-      embedder: embedder('bge-m3', embeddingUrl, undefined, 32), knowledge: ragflow(mcpUrl, datasets),
-      web: { options: { allowed: [], blocked: [], maxUses: 5 }, searxng: providerName === 'vllm' ? searxng : undefined, intranet: [] }, modeLimit: 'read-only', params: {} } });
+      // The provider, its key and the knowledge base, as the environment would configure them on a first start.
+      initial: {
+        providers: { [providerName]: providerName === 'vllm'
+          ? { url: `http://127.0.0.1:${proxy.address().port}/v1`, key: env('TABULARIUS_VLLM_KEY'), models: [model], context: 65_536 }
+          : { key: env(providerName === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'), models: [model] } },
+        defaultModel: `${providerName}/${model}`, knowledge: { url: mcpUrl, datasets },
+      },
+      embedder: embedder('bge-m3', embeddingUrl, undefined, 32),
+      web: { options: { allowed: [], blocked: [], maxUses: 5 }, searxng: providerName === 'vllm' ? searxng : undefined, intranet: [] }, modeLimit: 'read-only' } });
   const url = await gateway.listen();
   let token;
   const call = (path, method = 'GET', body) => fetch(`${url}/api/v1${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body),
@@ -132,6 +137,8 @@ try {
     return settled && s;
   }, 60 * 60_000).catch(async error => { console.log(JSON.stringify(await status())); throw error; });
   console.log(`[acceptance] indexed ${indexed.notes} notes, ${indexed.chunks} chunks in ${Math.round((Date.now() - started) / 1000)} s`);
+  // The vault's Tabularius.md becomes its prompt by importing it, as an owner would on the settings page.
+  await api(`/tabularius/vaults/${vault.id}/prompt`, 'PUT', { prompt: (await api(`/tabularius/vaults/${vault.id}/prompt/import`, 'POST', {})).prompt });
 
   // Values the filter masks in the hosted copy; none may appear in what the model receives. A value that also appears
   // unmasked elsewhere (an ordinary word after "token:") is not a credential.
