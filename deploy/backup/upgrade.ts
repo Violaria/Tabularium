@@ -55,6 +55,8 @@ export async function upgrade(options: DeploymentOptions & { image: string }) {
   try {
     await compose.run('stop', 'server');
     await docker(['tag', next, serviceImage(config, options.project)]);
+    // The sandbox's image too: the release Compose names the same one, the source Compose its own (<project>-sandbox).
+    if (config.services.sandbox) await docker(['tag', next, config.services.sandbox.image ?? `${options.project}-sandbox`]);
     await compose.run('up', '-d', '--wait', '--no-build', '--no-deps', '--force-recreate', 'server');
     // The sandbox runs from the same image; when its profile is active it moves to the new version too.
     if (config.services.sandbox) await compose.run('up', '-d', '--no-build', '--no-deps', '--force-recreate', 'sandbox');

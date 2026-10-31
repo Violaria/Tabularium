@@ -24,8 +24,9 @@ interface ComposeService {
   image?: string;
   environment?: Record<string, string>;
   volumes?: { type: string; source: string; target: string }[];
+  networks?: Record<string, unknown>;
 }
-export interface ComposeConfig { services: Record<string, ComposeService>; volumes: Record<string, { name: string }> }
+export interface ComposeConfig { services: Record<string, ComposeService>; volumes: Record<string, { name: string }>; networks?: Record<string, { external?: boolean }> }
 export interface ContainerState { id: string; running: boolean; healthy: boolean; exitCode: number }
 
 export class Compose {

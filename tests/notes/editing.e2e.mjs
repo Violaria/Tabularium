@@ -151,6 +151,9 @@ test('editing on the web notes page', { timeout: 900_000 }, async () => {
     await expect(state).toHaveText('已同步', { timeout: 30_000 });
     await remote('新建/乙.md', c => text(c) === '新笔记正文\n');
     await page.getByRole('button', { name: '完成' }).click();
+    // Another device's note links to 乙 both ways; the rename below takes the links along.
+    await push('链接.md', '[[乙]] 和 [正文](新建/乙.md)\n');
+    await expect(page.getByRole('button', { name: '链接', exact: true })).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: '新建', exact: true }).click();
     await page.locator('.row', { has: page.getByRole('button', { name: '乙', exact: true }) }).getByRole('button', { name: '更多操作' }).click();
     await page.getByRole('menuitem', { name: '重命名或移动…' }).click();
@@ -158,6 +161,7 @@ test('editing on the web notes page', { timeout: 900_000 }, async () => {
     await expect(page.getByRole('button', { name: '丙', exact: true })).toBeVisible({ timeout: 30_000 });
     await remote('新建/丙.md', c => text(c) === '新笔记正文\n');
     await remote('新建/乙.md', c => c === undefined || c.length === 0);
+    await remote('链接.md', c => text(c) === '[[丙]] 和 [正文](新建/丙.md)\n');
     await page.locator('.row', { has: page.getByRole('button', { name: '丙', exact: true }) }).getByRole('button', { name: '更多操作' }).click();
     await page.getByRole('menuitem', { name: '删除' }).click();
     await confirmAction('删除');
