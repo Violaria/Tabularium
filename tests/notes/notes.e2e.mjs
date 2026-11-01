@@ -97,6 +97,14 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     await page.getByLabel('E2EE 密码短语').fill(passphrase);
     await page.getByRole('button', { name: '解锁' }).click();
     await expect(page.locator('.vault-more')).toBeVisible({ timeout: 120_000 });
+    // The replica's state is a symbol beside the vault name, with no words under it; the tree folds away and back.
+    await expect(page.locator('.sync-mark[data-kind="ok"]')).toHaveAttribute('title', /已同步/);
+    await expect(page.locator('.notes aside .status')).toHaveCount(0);
+    await page.getByRole('button', { name: '收起目录' }).click();
+    await expect(page.locator('.notes .layout')).toHaveClass(/collapsed/);
+    assert.equal(await page.evaluate(() => localStorage.getItem('tabularium-notes:tree-collapsed')), '1');
+    await page.getByRole('button', { name: '展开目录' }).click();
+    await expect(page.locator('.notes .layout')).not.toHaveClass(/collapsed/);
     const devices = await api(`/vaults/${vault.id}/devices`);
     const browserDevice = devices.find(d => d.name.startsWith('网页 · Chrome'));
     assert(browserDevice, 'the browser is registered as a device');

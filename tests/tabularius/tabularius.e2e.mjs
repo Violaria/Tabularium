@@ -132,8 +132,8 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await page.getByLabel('密码').fill(userPassword);
     await page.getByRole('button', { name: '登录' }).click();
     // A new conversation: the input in the middle of the page, the client's state in the top-right corner.
-    await expect(page.locator('.sync-pill.ok')).toContainText('已同步', { timeout: 30_000 });
-    await expect(page.locator('.sync-pill')).toContainText('已索引');
+    // The client's state is a dot; its name and the counts are in its tooltip.
+    await expect(page.locator('.client-state.ok')).toHaveAttribute('title', /^已同步 · 已索引 /, { timeout: 30_000 });
     await expect(page.locator('.chat-start .composer')).toBeVisible();
     await expect(page.locator('.chat-title')).toHaveText('');
     const shots = resolve('test-runs', `tabularius-${Date.now()}`); await mkdir(shots, { recursive: true });
@@ -155,6 +155,31 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await expect(page.locator('.turn.assistant')).toHaveCount(2);
     await expect(page.locator('.turn.assistant').last().locator('.answer')).toContainText('根据', { timeout: 60_000 });
     await expect(page.locator('.conversation')).toHaveCount(1);
+    // The notes read are chips that open the note.
+    await expect(page.locator('.turn.assistant').last().locator('.chips a.chip').first()).toHaveAttribute('href', href);
+    // Projects and the archive, from the conversation's menu; nothing to delete in the top-right corner.
+    await expect(page.locator('.chat-top button')).toHaveCount(0);
+    // The ⋯ buttons show when their row is pointed at.
+    const menu = async () => { await page.locator('.conv-row').first().hover(); await page.locator('.conv-row .row-more').first().click(); };
+    const answerText = async value => { const dialog = page.getByRole('dialog'); await dialog.getByRole('textbox').fill(value); await dialog.locator('button[type=submit]').click(); };
+    await menu(); await page.getByRole('menuitem', { name: '新建项目…' }).click(); await answerText('运维');
+    await expect(page.locator('.project-row')).toHaveText('运维');
+    await expect(page.locator('.project-children .conversation')).toHaveCount(1);
+    await page.reload();
+    await expect(page.locator('.project-children .conversation')).toHaveCount(0, { timeout: 30_000 });
+    await page.locator('.project-row .project').click();
+    await expect(page.locator('.project-children .conversation')).toHaveCount(1);
+    await menu(); await page.getByRole('menuitem', { name: '归档' }).click();
+    await expect(page.locator('.archive summary')).toContainText('已归档 · 1');
+    assert.equal((await api('/home')).conversations.length, 0, 'archived conversations leave the home page');
+    await page.locator('.archive summary').click();
+    await menu(); await page.getByRole('menuitem', { name: '取消归档' }).click();
+    await expect(page.locator('.archive')).toHaveCount(0);
+    await page.locator('.project-row').hover(); await page.locator('.project-row .row-more').click(); await page.getByRole('menuitem', { name: '删除项目' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '删除项目', exact: true }).click();
+    await expect(page.locator('.project-row')).toHaveCount(0);
+    await expect(page.locator('.conversation')).toHaveCount(1);
+    assert.equal((await api(`/tabularius/vaults/${vault.id}/conversations`))[0].projectId, null, 'the conversation outlives its project');
     // Attachments: a picture and a configuration file go with a question. The model gets the picture as an image and the
     // file as masked text; the message shows both, also after the conversation is opened again.
     const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');

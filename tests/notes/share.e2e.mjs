@@ -49,7 +49,7 @@ test('sharing notes and folders from web notes', { timeout: 600_000 }, async () 
     const device = await api(`/vaults/${vault.id}/devices`, 'POST', { name: 'cli' });
     const client = { db: join(temp, 'db'), vault: join(temp, 'vault'), settings: join(temp, 'settings.json') };
     const notes = {
-      '笔记/计划.md': '# 计划\n\n见 [[私密日记|日记]]，预算在 [[预算]]。\n\n![[图.png]]\n',
+      '笔记/计划.md': '# 计划\n\n见 [[私密日记|日记]]，预算在 [[预算]]。\n\n![[图.png]]\n\n```mermaid\nflowchart LR\n  甲 --> 乙\n```\n',
       '笔记/预算.md': '预算正文。\n',
       '笔记/图.png': png,
       '私密日记.md': '非常私密的内容。\n',
@@ -109,6 +109,9 @@ test('sharing notes and folders from web notes', { timeout: 600_000 }, async () 
     await expect.poll(() => article.locator('img').evaluate(img => img.naturalWidth)).toBe(1);
     await expect(article.locator('.no-access')).toHaveCount(1);
     await expect(article.locator('.no-access')).toContainText('无访问权限');
+    // Diagrams are drawn as in web notes, styles and all.
+    await expect(article.locator('.mermaid-diagram.drawn svg')).toHaveCount(1, { timeout: 30_000 });
+    assert(await article.locator('.mermaid-diagram.drawn svg style').count(), 'the diagram keeps its own style');
     assert.doesNotMatch(await visitor.content(), /私密|日记/);
     await mkdir(resolve('test-runs'), { recursive: true });
     await visitor.screenshot({ path: resolve('test-runs', `${runId}-viewer.png`) });
