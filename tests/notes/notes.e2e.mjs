@@ -94,6 +94,8 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     await page.getByRole('button', { name: '登录' }).click();
     await unlock('wrong-passphrase');
     await expect(page.getByText('密码短语错误。')).toBeVisible({ timeout: 60_000 });
+    // The passphrase is never readable on screen: a password field, or text drawn as dots (out of password managers' reach).
+    assert(await page.getByLabel('E2EE 密码短语').evaluate(el => el.type === 'password' || getComputedStyle(el).webkitTextSecurity === 'disc'), 'the passphrase is masked');
     await page.getByLabel('E2EE 密码短语').fill(passphrase);
     await page.getByRole('button', { name: '解锁' }).click();
     await expect(page.locator('.vault-more')).toBeVisible({ timeout: 120_000 });

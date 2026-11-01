@@ -49,6 +49,8 @@ try {
     process.exitCode = report.ok ? 0 : 1;
   } else { console.error(usage); process.exitCode = 2; }
 } catch (error) {
-  print({ ok: false, error: (error as Error).message });
+  // A failed request reports only "fetch failed"; its cause says what happened (refused, reset, timed out).
+  const cause = (error as Error & { cause?: Error }).cause;
+  print({ ok: false, error: `${(error as Error).message}${cause ? `: ${cause.message}` : ''}` });
   process.exitCode = 1;
 }

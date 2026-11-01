@@ -12,7 +12,7 @@ import { pipeline } from 'node:stream/promises';
 import { createGunzip } from 'node:zlib';
 import { createWriteStream } from 'node:fs';
 import { Compose, docker, requireCompose, volumeExists } from './docker.ts';
-import { APP_TARGET, ENV_NAME, inspectSqlite } from './archive.ts';
+import { APP_TARGET, ENV_NAME, bindFiles, inspectSqlite } from './archive.ts';
 
 const FORMAT = 'tabularium-scheduled-1';
 interface PointManifest {
@@ -109,8 +109,16 @@ export async function restoreScheduled(root: string, id: string, options: { comp
   }
   await copyFile(options.envFile, join(target, ENV_NAME));
   await chmod(join(target, ENV_NAME), 0o600);
+  // Configuration files the services mount from the Compose directory (CouchDB's couchdb.ini) go along: without them
+  // Docker would create empty directories in their place.
+  const source = new Compose(options.compose, options.envFile, options.project);
+  for (const file of bindFiles(source, await source.config())) {
+    await mkdir(dirname(join(target, file)), { recursive: true });
+    await copyFile(join(source.directory, file), join(target, file));
+  }
   files.push(join(target, 'compose.override.yaml'));
-  // CouchDB is reachable from this host only while the backup is imported.
+  // CouchDB is reachable from this host only while the backup is imported, on its loopback address. Its own network is
+  // internal, and Docker publishes no ports there, so for the import it also joins a bridge network of the restore's own.
   const override = (couchPort: boolean) => writeFile(files.at(-1)!, `services:
   server:
     build: !reset null
@@ -124,6 +132,9 @@ export async function restoreScheduled(root: string, id: string, options: { comp
 ${couchPort ? `  couchdb:
     ports: !override
       - "127.0.0.1::5984"
+    networks: [database, restore]
+networks:
+  restore: {}
 ` : ''}`);
   await override(true);
   const compose = new Compose(files, join(target, ENV_NAME), options.project);
@@ -156,5 +167,7 @@ ${couchPort ? `  couchdb:
   if (sqlite.schema !== point.server.schema) throw new Error(`SQLite schema ${sqlite.schema}, backup has ${point.server.schema}`);
   await override(false);
   await compose.run('up', '-d', '--wait', '--no-build');
+  // CouchDB left the import's network when it was recreated; the network itself stays unless removed.
+  await docker(['network', 'rm', `${options.project}_restore`]);
   return { ok: true, project: options.project, target, port: Number(options.port), point: point.id, chain: chain.map(step => step.id), vaults: sqlite.vaults.length, clearedSessions: sqlite.sessions, databases: restored };
 }
