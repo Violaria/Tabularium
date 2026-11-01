@@ -181,6 +181,9 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await expect(page.locator('.project-row')).toHaveCount(0);
     await expect(page.locator('.conversation')).toHaveCount(1);
     assert.equal((await api(`/tabularius/vaults/${vault.id}/conversations`))[0].projectId, null, 'the conversation outlives its project');
+    // The reload above left the conversation closed: open it again to go on with it.
+    await page.locator('.conversation').first().click();
+    await expect(page.locator('.turn.assistant')).toHaveCount(2);
     // Attachments: a picture and a configuration file go with a question. The model gets the picture as an image and the
     // file as masked text; the message shows both, also after the conversation is opened again.
     const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
