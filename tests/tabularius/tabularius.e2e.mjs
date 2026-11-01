@@ -672,10 +672,28 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     // A URL the conversation never showed is refused, so note content cannot be smuggled out in a query string.
     assert.match((await ask('WEBLEAK 版本')).answer, /only URLs that appeared in the conversation/);
     assert.equal(mock.requests.page.length, 1);
+    // Hosts registered as forbidden for SSH are never fetched, in any mode: by address, and by name after a redirect.
+    const router = await api('/tabularius/hosts', 'POST', { name: 'router', address: '127.0.0.1', port: 22, username: 'root', policy: 'forbidden', commands: '' });
+    assert.match((await ask('WEB 版本')).answer, /address this mode does not allow/);
+    const modeLimits = (await api('/tabularius/settings')).limits;
+    await api('/tabularius/settings', 'PUT', { limits: { ...modeLimits, modeLimit: 'full' } });
+    await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'full' });
+    assert.match((await ask('WEB 版本')).answer, /address this mode does not allow/);
+    assert.equal(mock.requests.page.length, 1);
+    await api(`/tabularius/hosts/${router.id}`, 'PUT', { policy: 'allowed', commands: '' });
+    const bastion = await api('/tabularius/hosts', 'POST', { name: 'bastion', address: 'LOCALHOST', port: 22, username: 'root', policy: 'forbidden', commands: '' });
+    assert.match((await ask('WEB redirect')).answer, /address this mode does not allow/);
+    assert.deepEqual(mock.requests.page.slice(1).map(url => new URL(url, 'http://x').pathname), ['/redirect'], 'the redirect was followed no further');
+    // Not forbidden any more: the same page is fetched again in full mode.
+    await api(`/tabularius/hosts/${bastion.id}`, 'DELETE');
+    assert.match((await ask('WEB 版本')).answer, /版本 2.0/);
+    await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'restricted' });
+    await api('/tabularius/settings', 'PUT', { limits: modeLimits });
+    const fetched = mock.requests.page.length;
     // Read-only mode reaches only public addresses.
     await api(`/tabularius/vaults/${vault.id}/mode`, 'PUT', { mode: 'read-only' });
     assert.match((await ask('WEB 版本')).answer, /address this mode does not allow/);
-    assert.equal(mock.requests.page.length, 1);
+    assert.equal(mock.requests.page.length, fetched);
     const transcript = await api(`/tabularius/conversations/${conversation.id}`);
     assert.deepEqual(transcript.messages.filter(m => m.role === 'user' && !/^(PROPOSE|KB|WEB|WEBLEAK|SNIPPET|LOOP|REMEMBER|SSH|SANDBOX) /.test(m.text)).map(m => m.text), ['紫藤服务器', '管理端口', '附件 紫藤服务器', '银杏节点']);
     assert.deepEqual(transcript.messages.flatMap(m => m.tools ?? []).filter(tool => tool.proposal).map(tool => tool.proposal.status), ['applied', 'applied', 'discarded']);

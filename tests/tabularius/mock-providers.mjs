@@ -171,7 +171,15 @@ export async function startMockProviders() {
     if (path === '/search') {
       requests.searxng.push(req.url);
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ results: [{ url: `http://127.0.0.1:${server.address().port}/page`, title: '发布说明', content: '版本 2.0 发布' }, { url: 'https://blocked.example.org/x', title: 'x', content: '' }] }));
+      // A query with "redirect" finds a page that redirects to the release notes under the name localhost.
+      const first = new URL(req.url, 'http://x').searchParams.get('q')?.includes('redirect') ? 'redirect' : 'page';
+      res.end(JSON.stringify({ results: [{ url: `http://127.0.0.1:${server.address().port}/${first}`, title: '发布说明', content: '版本 2.0 发布' }, { url: 'https://blocked.example.org/x', title: 'x', content: '' }] }));
+      return;
+    }
+    if (path === '/redirect') {
+      requests.page.push(req.url);
+      res.writeHead(302, { location: `http://localhost:${server.address().port}/page` });
+      res.end();
       return;
     }
     if (path === '/page') {
