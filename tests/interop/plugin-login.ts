@@ -96,6 +96,23 @@ try {
   const disconnected = await evalObsidianJson<Record<string, unknown>>(obsidianCli, "(async()=>{const p=app.plugins.plugins['tabularium'];await p.tabularium.disconnect();const c=p.core.services.setting.currentSettings();return JSON.stringify({configured:c.isConfigured,uri:c.couchDB_URI,connection:Boolean(p.tabularium.connection),file:await app.vault.adapter.exists('.obsidian/plugins/tabularium/tabularium.json')});})()", session.cliEnv);
   assert.deepEqual(disconnected, { configured: false, uri: '', connection: false, file: false });
   assert(await readFile(join(b.path, 'notes/登录测试.md'), 'utf8'), 'notes kept after disconnect');
+  await session.app.stop(); session = undefined;
+
+  step('device C starts with peer-to-peer and hidden-file sync switched on in data.json, then connects');
+  // Settings an upstream LiveSync profile can carry; the plug-in no longer contains these features and must start,
+  // connect and synchronise regardless, with the features left off.
+  const c = await createTemporaryVault(); vaults.push(c);
+  session = await startTabularium(c, obsidianCli, { remoteType: 'ONLY_P2P', P2P_Enabled: true, P2P_AutoStart: true, P2P_AutoBroadcast: true,
+    P2P_AutoSyncPeers: 'Obsidian A', syncInternalFiles: true, usePluginSync: true });
+  // A data.json that already exists gets the schema's older defaults for what it lacks, not those of a new vault, so the
+  // fetch adopts the vault's synchronisation parameters and says so in a dialogue with only OK.
+  await connectTabularium(session, obsidianCli, { server, username, password, vault: { id: vault.id }, deviceName: 'Obsidian C', passphrase }, ['OK']);
+  for (const [path, content] of Object.entries(notes)) {
+    const expected = typeof content === 'string' ? new TextEncoder().encode(content) : content;
+    assert.deepEqual(await until(async () => { const value = await read(join(c.path, path)).catch(() => undefined); return value && value.length === expected.length ? value : undefined; }), expected);
+  }
+  const legacy = await evalObsidianJson<Record<string, unknown>>(obsidianCli, "(async()=>{const c=app.plugins.plugins['tabularium'].core.services.setting.currentSettings();return JSON.stringify({p2p:c.remoteType==='ONLY_P2P',P2P_Enabled:c.P2P_Enabled,P2P_AutoStart:c.P2P_AutoStart,syncInternalFiles:c.syncInternalFiles,usePluginSync:c.usePluginSync});})()", session.cliEnv);
+  assert.deepEqual(legacy, { p2p: false, P2P_Enabled: false, P2P_AutoStart: false, syncInternalFiles: false, usePluginSync: false });
   await api('/sessions/current', 'DELETE', undefined, token);
   console.log('Plug-in login passed.');
 } finally {

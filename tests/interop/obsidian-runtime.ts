@@ -25,9 +25,10 @@ export async function until<T>(check: () => Promise<T | undefined | false>, time
 }
 
 /** Starts Obsidian with an unconfigured Tabularium plug-in. */
-export async function startTabularium(vault: TemporaryVault, obsidianCli: string) {
+/** Starts Obsidian with the plug-in; `pluginData` is written to its data.json first (settings left by an earlier start). */
+export async function startTabularium(vault: TemporaryVault, obsidianCli: string, pluginData: Record<string, unknown> = {}) {
   await pinObsidianRuntime(vault);
-  const session = await startObsidianLiveSyncSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault, pluginData: {}, localStorageEntries: createE2eObsidianDeviceLocalState(vault.name) });
+  const session = await startObsidianLiveSyncSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault, pluginData, localStorageEntries: createE2eObsidianDeviceLocalState(vault.name) });
   await until(() => evalObsidianJson<boolean>(obsidianCli, "(async()=>JSON.stringify(Boolean(app.plugins.plugins['tabularium']?.tabularium)))()", session.cliEnv));
   return session;
 }
@@ -35,11 +36,14 @@ export async function startTabularium(vault: TemporaryVault, obsidianCli: string
 // Answers upstream's fetch questions for a device whose vault starts empty.
 const confirmations = ['Overwrite all with remote files', 'Keep local files even if not on remote'];
 
-/** connect() ends by reloading Obsidian, so it is started without waiting and the reload is awaited separately. */
-export async function connectTabularium(session: ObsidianLiveSyncSession, obsidianCli: string, options: Record<string, unknown>) {
+/**
+ * connect() ends by reloading Obsidian, so it is started without waiting and the reload is awaited separately.
+ * `buttons` adds answers for dialogues a particular start is expected to show.
+ */
+export async function connectTabularium(session: ObsidianLiveSyncSession, obsidianCli: string, options: Record<string, unknown>, buttons: string[] = []) {
   await evalObsidianJson(obsidianCli, `(async()=>{window.__tabulariumLogin=app.plugins.plugins['tabularium'].tabularium.connect(${JSON.stringify(options)}).then(()=>'done',e=>'error: '+e.message);return JSON.stringify(true);})()`, session.cliEnv);
   await until(async () => {
-    await evalObsidianJson(obsidianCli, `(async()=>{for(const b of document.querySelectorAll('.modal button'))if(${JSON.stringify(confirmations)}.includes(b.textContent?.trim()))b.click();return JSON.stringify(true);})()`, session.cliEnv);
+    await evalObsidianJson(obsidianCli, `(async()=>{for(const b of document.querySelectorAll('.modal button'))if(${JSON.stringify([...confirmations, ...buttons])}.includes(b.textContent?.trim()))b.click();return JSON.stringify(true);})()`, session.cliEnv);
     return (await waitForLiveSyncCoreReady(obsidianCli, session.cliEnv, 5000)).appReady;
   }, 120_000).catch(async (error) => {
     // Shows what the app is waiting for: open dialogues and their buttons.
