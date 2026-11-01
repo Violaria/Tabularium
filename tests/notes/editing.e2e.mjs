@@ -180,12 +180,45 @@ test('editing on the web notes page', { timeout: 900_000 }, async () => {
     await page.getByRole('button', { name: '完成' }).click();
     await expect(page.locator('article img')).toHaveCount(1);
 
+    // Editing views. Obsidian's syntax survives every view; live render hides marks away from the cursor; the format
+    // toolbar and the insert menu change only what they act on; reading can show the source; formulas are drawn.
+    const syntax = '---\ntags: [甲]\n---\n见 [[readme|说明]] 与 %%备注%%\n\n> [!note] 提示\n> 内容\n\n重点\n\n公式 $E=mc^2$ 和价格 $5 与 $10。\n';
+    await push('笔记/语法.md', syntax);
+    await page.getByRole('button', { name: '语法', exact: true }).click({ timeout: 60_000 });
+    await expect(page.locator('article .math .katex')).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.locator('article')).toContainText('价格 $5 与 $10');
+    await page.getByRole('radio', { name: '源码' }).click();
+    await expect(page.locator('.editor.readonly .cm-content')).toContainText('[[readme|说明]]');
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('tabularium-notes:views')).read), 'source');
+    await page.getByRole('radio', { name: '渲染' }).click();
+    await page.getByRole('button', { name: '编辑' }).click();
+    await expect(page.getByRole('radio', { name: '即时渲染' })).toHaveAttribute('aria-checked', 'true');
+    const lineWith = words => page.locator('.editor .cm-line', { hasText: words }).first();
+    await lineWith('重点').click();
+    await expect(lineWith('说明')).not.toContainText('[[');
+    await expect(page.locator('.editor .cm-math .katex')).toHaveCount(1, { timeout: 30_000 });
+    for (const view of ['源码', '分屏预览', '即时渲染']) await page.getByRole('radio', { name: view }).click();
+    await expect(page.locator('.split-preview')).toHaveCount(0);
+    // Bold from the toolbar over the selected word, saved; nothing else in the note changes.
+    await lineWith('重点').click();
+    await page.keyboard.press('Home'); await page.keyboard.press('Shift+End');
+    await page.locator('.format-menu').getByRole('button', { name: '粗体' }).click();
+    await page.keyboard.press('ControlOrMeta+s');
+    assert.equal(text(await remote('笔记/语法.md', c => text(c)?.includes('**重点**'))), syntax.replace('\n重点\n', '\n**重点**\n'));
+    // A mind map from the insert menu, at the end of the note.
+    await editor.click(); await page.keyboard.press('ControlOrMeta+End');
+    await page.getByRole('button', { name: '插入' }).click();
+    await page.getByRole('menuitem', { name: '思维导图' }).click();
+    await page.keyboard.press('ControlOrMeta+s');
+    await remote('笔记/语法.md', c => text(c)?.includes('```mermaid\nmindmap\n  root((主题))'));
+    await page.getByRole('button', { name: '完成' }).click();
+
     // Offline: the page loads from the service worker cache, unlocks from the local copy and uploads later.
     await context.setOffline(true);
     await page.reload();
     await expect(page.getByText('下列笔记库曾在本浏览器中打开过，可以离线使用。')).toBeVisible({ timeout: 30_000 });
     await unlock();
-    await expect(page.locator('.status')).toHaveText('离线：修改将在联网后上传');
+    await expect(page.locator('.sync-mark[data-kind="off"]')).toHaveAttribute('title', '离线：修改将在联网后上传');
     await page.getByRole('button', { name: 'readme', exact: true }).click();
     await page.getByRole('button', { name: '编辑' }).click();
     await type('离线编辑\n');

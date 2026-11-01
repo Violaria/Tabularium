@@ -170,11 +170,12 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await page.locator('.project-row .project').click();
     await expect(page.locator('.project-children .conversation')).toHaveCount(1);
     await menu(); await page.getByRole('menuitem', { name: '归档' }).click();
-    await expect(page.locator('.archive summary')).toContainText('已归档 · 1');
+    // The archive is a section of its own, like the projects and the recent conversations.
+    await expect(page.locator('[data-section="archived"]')).toHaveText('已归档');
+    await expect(page.locator('.section-body').last().locator('.conversation')).toHaveCount(1);
     assert.equal((await api('/home')).conversations.length, 0, 'archived conversations leave the home page');
-    await page.locator('.archive summary').click();
     await menu(); await page.getByRole('menuitem', { name: '取消归档' }).click();
-    await expect(page.locator('.archive')).toHaveCount(0);
+    await expect(page.locator('[data-section="archived"]')).toHaveCount(0);
     await page.locator('.project-row').hover(); await page.locator('.project-row .row-more').click(); await page.getByRole('menuitem', { name: '删除项目' }).click();
     await page.getByRole('dialog').getByRole('button', { name: '删除项目', exact: true }).click();
     await expect(page.locator('.project-row')).toHaveCount(0);
