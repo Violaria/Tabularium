@@ -2,11 +2,11 @@
 
 English · [中文](README.zh-CN.md) · [Lingua Latīna](README.la.md)
 
-Tabularium is a self-hosted server for synchronising Obsidian vaults with end-to-end encryption, together with the Obsidian plug-in that connects to it. Notes are encrypted on each device before they are uploaded; the server stores them in CouchDB and cannot read them. Registration is closed: an administrator creates the accounts.
+Tabularium is a self-hosted server that synchronises note vaults with end-to-end encryption, together with the Obsidian plug-in and the web notes client that connect to it. Notes are encrypted on each device before they are uploaded; the server stores them in CouchDB and cannot read them. Registration is closed: an administrator creates the accounts.
 
-Besides synchronisation, the server provides a web app: an administration console, a browser client for reading and editing notes (decrypted in the browser), shared note pages, sending notes to a Kindle, scheduled backups, and Tabularius, an optional AI curator that a vault owner can enable for one vault at a time.
+Web notes lets you read and edit notes in the browser and share them on the public internet in several forms (public or with a password, through a link that expires or one that does not), and you can send your notes to your Kindle. Sharing and sending to Kindle are also available in the Obsidian plug-in.
 
-Version 0.24.5. The project is in active development and is not yet published under a licence of its own; see Licences below.
+Besides synchronisation, the server's web pages provide server administration, scheduled backups, and Tabularius, an AI administrator (the vault's clerk) that a vault owner can enable for one vault at a time. It works with several APIs (OpenAI, Anthropic, Google Gemini, DeepSeek) and with inference engines for locally deployed models (vLLM, Ollama). You can also give the clerk RAG retrieval, if you run a RAGFlow server.
 
 ## Repositories
 
@@ -89,7 +89,3 @@ node deploy/backup/cli.ts rollback <backup-dir> --compose <file>... --env-file <
 ```
 
 `backup` stops the services briefly and archives both data volumes and the image. `upgrade` takes such a backup, starts the new image on a copy first, then switches; `rollback` returns to the backup taken before an upgrade. Restores always go into a new Compose project, never over the running one. Scheduled backups are written by the server itself and configured under Admin → Backups.
-
-## Licences
-
-The plug-in keeps the MIT licence of Self-hosted LiveSync (copyright vorotamoroz); see `apps/obsidian/LICENSE`. The sorting package comes from Custom File Explorer sorting by SebastianMC; see `packages/custom-sort/UPSTREAM.md`. The licence for the rest of Tabularium has not been chosen yet. A release package lists every third-party dependency in `THIRD_PARTY_LICENSES.md`.

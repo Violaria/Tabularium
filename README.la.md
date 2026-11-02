@@ -2,11 +2,11 @@
 
 [English](README.md) · [中文](README.zh-CN.md) · Lingua Latīna
 
-Tabularium est ministrator domi hospitatus qui tabularia Obsidian cryptographia ab extremo ad extremum synchronizat, una cum additamento Obsidian quod ad eum conectit. Commentarii in quoque instrumento cryptantur antequam mittuntur; ministrator eos in CouchDB servat nec legere potest. Inscriptio libera non est: rationes usorum ab administratore creantur.
+Tabularium est ministrator domi hospitatus qui tabularia commentariorum cryptographia ab extremo ad extremum synchronizat, una cum additamento Obsidian et commentariis interretialibus qui ad eum conectunt. Commentarii in quoque instrumento cryptantur antequam mittuntur; ministrator eos in CouchDB servat nec legere potest. Inscriptio libera non est: rationes usorum ab administratore creantur.
 
-Praeter synchronizationem ministrator applicationem interretialem praebet: consolam administrationis, commentarios interretiales qui in navigatro leguntur et emendantur (in navigatro decryptos), paginas commentariorum communicatorum, missionem ad Kindle, exempla tutelaria statuta, et curatorem artificialem optionalem cui nomen est Tabularius, quem dominus tabularii singulis tabulariis accendere potest.
+Commentarii interretiales in navigatro legi et emendari possunt, et pluribus modis in interrete publico communicari (publice aut tessera muniti, nexu ad tempus valido aut perpetuo); commentarios etiam ad Kindle tuum mittere potes. Communicatio et missio ad Kindle etiam in additamento Obsidian praebentur.
 
-Versio 0.24.5. Opus adhuc strenue excolitur nec sub licentia sua iam editum est; vide infra «Licentiae».
+Praeter synchronizationem paginae interretiales ministratoris administrationem, exempla tutelaria statuta et administratorem artificialem cui nomen est Tabularius (scribam tabularii) praebent, quem dominus tabularii singulis tabulariis accendere potest. Pluribus API (OpenAI, Anthropic, Google Gemini, DeepSeek) et machinis inferentiae exemplarium localiter institutorum (vLLM, Ollama) uti potest. Scribae etiam quaestionem RAG addere potes, si ministratorem RAGFlow instituisti.
 
 ## Repositoria codicis
 
@@ -89,7 +89,3 @@ node deploy/backup/cli.ts rollback <capsa-exempli> --compose <plica>... --env-fi
 ```
 
 `backup` officia breviter sistit et ambo volumina datorum cum imagine in archivum condit. `upgrade` tale exemplum facit, imaginem novam primum in copia experitur, deinde commutat; `rollback` ad exemplum ante renovationem factum redit. Restitutiones semper in novum inceptum Compose fiunt, numquam super currens. Exempla statuta ab ipso ministratore scribuntur et sub «Administratio → Exempla tutelaria» constituuntur.
-
-## Licentiae
-
-Additamentum licentiam MIT Self-hosted LiveSync servat (iura auctoris vorotamoroz); vide `apps/obsidian/LICENSE`. Fasciculus ordinationis ex Custom File Explorer sorting a SebastianMC venit; vide `packages/custom-sort/UPSTREAM.md`. Licentia reliqui Tabularii nondum electa est. Fasciculus editionis omnes dependentias tertiorum in `THIRD_PARTY_LICENSES.md` enumerat.

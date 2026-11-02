@@ -2,11 +2,11 @@
 
 [English](README.md) · 中文 · [Lingua Latīna](README.la.md)
 
-Tabularium 是一个自托管的 Obsidian 笔记库同步服务器，采用端到端加密，并配有连接它的 Obsidian 插件。笔记在每台设备上加密后才上传；服务器把它们存在 CouchDB 中，无法读取内容。不开放注册：账户由管理员创建。
+Tabularium 是一个自部署的笔记库同步服务器，采用端到端加密，并配有连接它的 Obsidian 插件以及网页端云笔记。笔记在每台设备上加密后才上传；服务器把它们存在 CouchDB 中，无法读取内容。不开放注册：账户由管理员创建。
 
-除同步外，服务器还提供一个网页应用：管理控制台、在浏览器中阅读和编辑笔记的云笔记（在浏览器内解密）、笔记分享页、发送到 Kindle、定时备份，以及可选的 AI 管理员 Tabularius（书记员）。笔记库的所有者可以为单个笔记库开启它。
+云笔记可以在浏览器中阅读和编辑笔记，可以以多种形式（公开或密码、限时有效的链接或长期有效的链接）将笔记分享到公共互联网上，你还可以将你的笔记发送到你的 Kindle 设备上。分享和推送到 Kindle 功能在 Obsidian 插件同样支持。
 
-版本 0.24.5。项目仍在积极开发中，尚未以自己的许可证发布；见下文「许可证」。
+除同步服务外，服务器网页端还提供笔记服务器管理、定时备份，以及 AI 管理员 Tabularius（笔记库书记员），笔记库的所有者可以为单个笔记库开启它。它支持接入多家 API（OpenAI、Anthropic、Google Gemini、DeepSeek）以及本地部署模型的推理引擎（vLLM、Ollama）。你还可以为书记员配置 RAG 检索，只要你部署了 RAGFlow 服务器。
 
 ## 仓库
 
@@ -90,6 +90,3 @@ node deploy/backup/cli.ts rollback <备份目录> --compose <文件>... --env-fi
 
 `backup` 短暂停止服务，归档两个数据卷和镜像。`upgrade` 先做这样一份备份，在副本上试运行新镜像，通过后再切换；`rollback` 回到升级前的那份备份。恢复总是进入一个新的 Compose 项目，从不覆盖正在运行的项目。定时备份由服务器自己写入，在「管理 → 备份」中配置。
 
-## 许可证
-
-插件沿用 Self-hosted LiveSync 的 MIT 许可证（版权归 vorotamoroz），见 `apps/obsidian/LICENSE`。排序包来自 SebastianMC 的 Custom File Explorer sorting，见 `packages/custom-sort/UPSTREAM.md`。Tabularium 其余部分的许可证尚未确定。发布包在 `THIRD_PARTY_LICENSES.md` 中列出所有第三方依赖。
