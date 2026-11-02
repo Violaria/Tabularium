@@ -64,7 +64,11 @@ try {
     assert.deepEqual([manifest.id, manifest.version], ['tabularium', version]);
     const zip = (await exec('unzip', ['-Z1', join(release, `tabularium-obsidian-${version}.zip`)])).stdout.split('\n');
     for (const file of ['tabularium/main.js', 'tabularium/manifest.json', 'tabularium/styles.css']) assert(zip.includes(file), file);
-    assert.match(await readFile(join(release, 'THIRD_PARTY_LICENSES.md'), 'utf8'), /mediabunny@.*MPL-2\.0/);
+    const licences = await readFile(join(release, 'THIRD_PARTY_LICENSES.md'), 'utf8');
+    // An MPL component is named with where its unmodified source is; the in-repository sync core with its upstream origin.
+    assert.match(licences, /dompurify@.*MPL-2\.0.*源码见/);
+    assert.match(licences, /- @tabularium\/sync-core@0\.2\.1/);
+    assert.match(licences, /Commonlib（作者 vorotamoroz，MIT.*3ecb95b/);
   });
 
   const port = await freePort(), httpsPort = await freePort();
