@@ -160,9 +160,15 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     // The tree follows the vault's sortspec.md like the plug-in; a new rule file reorders it live.
     const topLevel = () => page.locator('aside nav > ul > li > .row .name').allTextContents();
     await expect.poll(topLevel).toEqual(['笔记', 'assets', 'readme']);
+    // Former front-matter rules are not read: the tree stays by name and the page says to convert them.
     await writeFile(join(client.vault, 'sortspec.md'), '---\nsorting-spec: |-\n  target-folder: /\n  readme\n  笔记\n---\n');
     await cli('mirror', client.vault); await cli('sync');
+    await expect(page.locator('.sort-error')).toContainText('sortspec.md', { timeout: 60_000 });
+    await expect.poll(topLevel).toEqual(['笔记', 'assets', 'readme', 'sortspec']);
+    await writeFile(join(client.vault, 'sortspec.md'), '顺序：\n\n- readme —— 先读这篇\n- 笔记\n');
+    await cli('mirror', client.vault); await cli('sync');
     await expect.poll(topLevel, { timeout: 60_000 }).toEqual(['readme', '笔记', 'assets', 'sortspec']);
+    await expect(page.locator('.sort-error')).toHaveCount(0);
 
 
     // The passphrase is in no browser storage; after a reload it is asked again.

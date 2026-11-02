@@ -11,9 +11,9 @@
   },
   "packageManager": "npm@11.6.1",
   "scripts": {
-    "bootstrap": "npm ci && npm run build:sorting && npm ci --prefix apps/obsidian && npm run build:core --prefix apps/obsidian",
-    "check": "npm run build:sorting && npm run check:server && npm run check:backup && npm run check:release && node --check tests/interop/gateway-baseline.mjs && node --check tests/interop/baseline.mjs && node apps/obsidian/node_modules/typescript/bin/tsc -p tests/interop/tsconfig.json && npm run check --prefix apps/obsidian",
-    "build": "npm run build:sorting && npm run build:server && npm run build --prefix apps/obsidian && npm run build --prefix apps/obsidian --workspace self-hosted-livesync-cli",
+    "bootstrap": "npm ci && npm ci --prefix apps/obsidian && npm run build:core --prefix apps/obsidian",
+    "check": "npm run check:server && npm run check:backup && npm run check:release && node --check tests/interop/gateway-baseline.mjs && node --check tests/interop/baseline.mjs && node apps/obsidian/node_modules/typescript/bin/tsc -p tests/interop/tsconfig.json && npm run check --prefix apps/obsidian",
+    "build": "npm run build:server && npm run build --prefix apps/obsidian && npm run build --prefix apps/obsidian --workspace self-hosted-livesync-cli",
     "test:unit": "npm run test:unit --prefix apps/obsidian",
     "test:baseline": "node tests/interop/baseline.mjs",
     "build:server": "npm run build:notes && npm run build:cli && npm run build --workspace @tabularium/server",
@@ -24,9 +24,7 @@
     "test:tabularius": "npm run build:server && node --test tests/tabularius/*.e2e.mjs",
     "start:server": "npm start --workspace @tabularium/server",
     "test:gateway": "npm run build:server && node tests/interop/baseline.mjs --gateway",
-    "build:sorting": "npm run build --workspace @tabularium/custom-sort",
-    "test:sorting": "npm test --workspace @tabularium/custom-sort",
-    "test:sorting:obsidian": "npm run build:sorting && npm run build --prefix apps/obsidian && npm run test:tabularium:sorting --prefix apps/obsidian",
+    "test:sorting:obsidian": "npm run build --prefix apps/obsidian && npm run test:tabularium:sorting --prefix apps/obsidian",
     "check:backup": "tsc -p deploy/backup",
     "check:release": "tsc -p deploy/release",
     "release": "node deploy/release/build.ts",
@@ -40,8 +38,7 @@
     "test:server:browser": "npm run build:notes && npm run test:browser --workspace @tabularium/server"
   },
   "workspaces": [
-    "apps/server",
-    "packages/custom-sort"
+    "apps/server"
   ],
   "devDependencies": {
     "@types/node": "24.10.0",

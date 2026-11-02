@@ -1,3 +1,5 @@
+// File sorting in real Obsidian: the order from the list in sortspec.md, live updates, pausing and unloading, converting
+// the former front-matter rules, and stepping aside for the standalone Custom File Explorer sorting plug-in.
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
@@ -22,8 +24,8 @@ await mkdir(join(vault.path, 'Default'));
 for (const folder of ['Notes', 'Default']) {
   for (const name of ['Alpha', 'Beta', 'Zeta']) await writeFile(join(vault.path, folder, `${name}.md`), `# ${name}\n`);
 }
-const spec = '---\nsorting-spec: |\n  Zeta\n  Alpha\n  Beta\n  ...\n---\n';
-await writeFile(join(vault.path, 'Notes/sortspec.md'), spec);
+const rules = ['文件的顺序。', '', '- Notes —— 笔记放最前', '  - Zeta', '  - ...', '  - Alpha —— 最后读', '- Default', ''].join('\n');
+await writeFile(join(vault.path, 'sortspec.md'), rules);
 let session: ObsidianLiveSyncSession | undefined;
 const report: { runId: string; obsidian: string; scenarios: string[]; status?: string; error?: string } = { runId, obsidian: '1.12.7', scenarios: [] };
 try {
@@ -31,124 +33,123 @@ try {
     pluginData: { isConfigured: false, couchDB_DBNAME: 'sorting-preserves-sync-config' },
   });
   const evaluate = <T>(code: string) => evalObsidianJson<T>(cli, `(async()=>{${code}})()`, session!.cliEnv, 45_000);
-  await evaluate(`
+  /** A folder's items as the file list shows them, once they match `want` (or as last seen after 20 seconds). */
+  const shown = (folder: string, want?: string[]) => evaluate<string[]>(`
+    const view=app.workspace.getLeavesOfType('file-explorer')[0].view;
+    const read=()=>view.getSortedFolderItems(${folder === '/' ? 'app.vault.getRoot()' : `app.vault.getAbstractFileByPath(${JSON.stringify(folder)})`}).map(item=>item.file.name);
+    const want=${JSON.stringify(want ?? null)};
+    const deadline=Date.now()+20000;
+    while(want&&JSON.stringify(read())!==JSON.stringify(want)&&Date.now()<deadline) await new Promise(r=>setTimeout(r,200));
+    return JSON.stringify(read());
+  `);
+  const sorting = "app.plugins.plugins['tabularium'].sorting";
+  const untilTakenOver = `
     const deadline=Date.now()+30000;
-    while(!app.plugins.plugins['tabularium']?.sorting?.ready && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
-    const plugin=app.plugins.plugins['tabularium'];
-    if(!plugin?.sorting?.ready) throw new Error('Sorting component did not start');
+    while(!(${sorting}?.patched) && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
+    if(!${sorting}?.patched) throw new Error('Sorting did not take over the file list');
+  `;
+  await evaluate(`
+    ${untilTakenOver}
     globalThis.sortTestView=app.workspace.getLeavesOfType('file-explorer')[0].view;
-    globalThis.sortTestOriginal=globalThis.sortTestView.getSortedFolderItems;
-    globalThis.sortTestNames=(folder)=>globalThis.sortTestView.getSortedFolderItems(app.vault.getAbstractFileByPath(folder)).map(item=>item.file.name);
-    globalThis.sortTestDefault=globalThis.sortTestNames('Default');
-    plugin.sorting.switchPluginStateTo(true);
+    // Taken over at load, so this is the wrapper.
+    globalThis.sortTestWrapped=Object.getPrototypeOf(globalThis.sortTestView).getSortedFolderItems;
     return JSON.stringify(true);
   `);
-  const ordered = await evaluate<string[]>("return JSON.stringify(globalThis.sortTestNames('Notes'));");
-  assert.deepEqual(ordered.filter(name => name !== 'sortspec.md'), ['Zeta.md', 'Alpha.md', 'Beta.md']);
-  assert.equal(await evaluate<boolean>("return JSON.stringify(JSON.stringify(globalThis.sortTestNames('Default'))===JSON.stringify(globalThis.sortTestDefault));"), true);
-  report.scenarios.push('manual-order-and-unmatched-folder');
+
+  assert.deepEqual(await shown('Notes', ['Zeta.md', 'Beta.md', 'Alpha.md']), ['Zeta.md', 'Beta.md', 'Alpha.md']);
+  assert.deepEqual(await shown('/', ['Notes', 'Default', 'sortspec.md']), ['Notes', 'Default', 'sortspec.md']);
+  assert.deepEqual(await shown('Default'), ['Alpha.md', 'Beta.md', 'Zeta.md']);
+  report.scenarios.push('list-with-notes-and-ellipsis');
+
+  await evaluate(`await app.vault.modify(app.vault.getAbstractFileByPath('sortspec.md'), ${JSON.stringify(rules.replace('- Default', '- Default\n  - Beta'))});return JSON.stringify(true);`);
+  assert.deepEqual(await shown('Default', ['Beta.md', 'Alpha.md', 'Zeta.md']), ['Beta.md', 'Alpha.md', 'Zeta.md']);
+  report.scenarios.push('edited-rules-apply-at-once');
+
   const settingsPath = join(vault.path, '.obsidian/plugins/tabularium');
   const initialSyncSettings = await readFile(join(settingsPath, 'data.json'), 'utf8');
-  await evaluate(`
-    const sorting=app.plugins.plugins['tabularium'].sorting;
-    sorting.openSettings();
-    if(!document.querySelector('.tabularium-sorting-settings')) throw new Error('Settings dialogue missing');
-    sorting.settings.additionalSortspecFile='custom-rules';
-    await sorting.saveSettings();
-    return JSON.stringify(true);
-  `);
-  assert.equal(JSON.parse(await readFile(join(settingsPath, 'custom-sort.json'), 'utf8')).additionalSortspecFile, 'custom-rules');
-  const syncSettings = JSON.parse(await readFile(join(settingsPath, 'data.json'), 'utf8'));
+  await evaluate(`await ${sorting}.setSuspended(true);return JSON.stringify(true);`);
+  assert.deepEqual(await shown('Notes', ['Alpha.md', 'Beta.md', 'Zeta.md']), ['Alpha.md', 'Beta.md', 'Zeta.md']);
+  assert.equal(JSON.parse(await readFile(join(settingsPath, 'sorting.json'), 'utf8')).suspended, true);
   assert.equal(await readFile(join(settingsPath, 'data.json'), 'utf8'), initialSyncSettings);
-  assert.equal('additionalSortspecFile' in syncSettings, false);
-  report.scenarios.push('settings-dialogue-and-isolated-persistence');
-  const paused = await evaluate<string[]>(`
-    app.plugins.plugins['tabularium'].sorting.switchPluginStateTo(false);
-    return JSON.stringify(globalThis.sortTestNames('Notes'));
-  `);
-  assert.deepEqual(paused.filter(name => name !== 'sortspec.md'), ['Alpha.md', 'Beta.md', 'Zeta.md']);
-  report.scenarios.push('pause-restores-default-order');
-  await evaluate(`
-    const file=app.vault.getAbstractFileByPath('Notes/sortspec.md');
-    await app.vault.modify(file,${JSON.stringify('---\nsorting-spec: |\n  order-asc: invalid-order\n---\n')});
-    const deadline=Date.now()+10000;
-    while(!app.metadataCache.getFileCache(file)?.frontmatter?.['sorting-spec']?.includes('invalid-order') && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
-    const sorting=app.plugins.plugins['tabularium'].sorting;
-    sorting.switchPluginStateTo(true);
-    if(!sorting.settings.suspended) throw new Error('Invalid spec did not suspend sorting');
-    await app.vault.modify(file,${JSON.stringify(spec)});
-    return JSON.stringify(true);
-  `);
-  report.scenarios.push('invalid-spec-suspends-sorting');
+  report.scenarios.push('pause-restores-default-order-and-settings-stay-apart');
+
   await evaluate(`
     await app.plugins.disablePlugin('tabularium');
-    if(globalThis.sortTestView.getSortedFolderItems!==globalThis.sortTestOriginal) throw new Error('File explorer patch retained after unload');
+    if(Object.getPrototypeOf(globalThis.sortTestView).getSortedFolderItems===globalThis.sortTestWrapped) throw new Error('File list method retained after unload');
     await app.plugins.enablePlugin('tabularium');
-    const deadline=Date.now()+30000;
-    while(!app.plugins.plugins['tabularium']?.sorting?.ready && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
-    const sorting=app.plugins.plugins['tabularium'].sorting;
-    if(sorting.settings.additionalSortspecFile!=='custom-rules') throw new Error('Sorting settings were not restored');
-    sorting.switchPluginStateTo(true);
+    ${untilTakenOver}
+    if(!${sorting}.settings.suspended) throw new Error('Pause was not kept across a reload');
+    await ${sorting}.setSuspended(false);
     return JSON.stringify(true);
   `);
-  assert.deepEqual((await evaluate<string[]>("return JSON.stringify(globalThis.sortTestNames('Notes'));")).filter(name => name !== 'sortspec.md'), ['Zeta.md', 'Alpha.md', 'Beta.md']);
-  report.scenarios.push('unload-restores-method-and-reload-retains-settings');
+  assert.deepEqual(await shown('Notes', ['Zeta.md', 'Beta.md', 'Alpha.md']), ['Zeta.md', 'Beta.md', 'Alpha.md']);
+  report.scenarios.push('unload-restores-method-and-reload-keeps-settings');
+
+  // Former front-matter rules: not read until converted on the settings page.
+  const former = '---\nsorting-spec: |-\n  target-folder: /\n  Default\n  Notes\n  target-folder: Notes\n  Beta\n  ...\n---\n\n说明。\n';
+  await evaluate(`await app.vault.modify(app.vault.getAbstractFileByPath('sortspec.md'), ${JSON.stringify(former)});return JSON.stringify(true);`);
+  assert.deepEqual(await shown('Notes', ['Alpha.md', 'Beta.md', 'Zeta.md']), ['Alpha.md', 'Beta.md', 'Zeta.md']);
+  await evaluate(`
+    let deadline=Date.now()+10000;
+    while(!${sorting}.formerRules.includes('sortspec.md') && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
+    const done=${sorting}.convert('sortspec.md');
+    let button;
+    deadline=Date.now()+10000;
+    while(!(button=document.querySelector('.tabularium-confirm .mod-cta, .tabularium-confirm .mod-warning')) && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
+    if(!document.querySelector('.tabularium-confirm-preview')?.textContent.includes('- Notes')) throw new Error('No preview of the list');
+    button.click();
+    await done;
+    return JSON.stringify(true);
+  `);
+  assert.equal(await readFile(join(vault.path, 'sortspec.md'), 'utf8'), '- Default\n- Notes\n  - Beta\n  - ...\n\n说明。\n');
+  assert.deepEqual(await shown('Notes', ['Beta.md', 'Alpha.md', 'Zeta.md']), ['Beta.md', 'Alpha.md', 'Zeta.md']);
+  assert.deepEqual(await shown('/', ['Default', 'Notes', 'sortspec.md']), ['Default', 'Notes', 'sortspec.md']);
+  report.scenarios.push('front-matter-rules-converted-after-preview');
+
+  // The standalone plug-in reads front-matter rules; the note holds both, so each plug-in finds its own.
+  await evaluate(`await app.vault.modify(app.vault.getAbstractFileByPath('sortspec.md'), ${JSON.stringify('---\nsorting-spec: |-\n  target-folder: Notes\n  Zeta\n  Alpha\n  Beta\n---\n- Notes\n  - Zeta\n  - Alpha\n  - Beta\n')});return JSON.stringify(true);`);
   const standaloneDir = join(vault.path, '.obsidian/plugins/custom-sort');
   await mkdir(standaloneDir, { recursive: true });
   for (const file of ['main.js', 'manifest.json', 'styles.css']) await copyFile(join(standalone, file), join(standaloneDir, file));
-  /** Waits until the Notes folder is in the order of its sortspec.md, whichever plug-in sorts it. */
-  const sortedBySpec = () => evaluate<boolean>(`
-    const deadline=Date.now()+20000;
-    const want=JSON.stringify(['Zeta.md','Alpha.md','Beta.md']);
-    while(JSON.stringify(globalThis.sortTestNames('Notes').filter(n=>n!=='sortspec.md'))!==want && Date.now()<deadline) await new Promise(r=>setTimeout(r,200));
-    return JSON.stringify(JSON.stringify(globalThis.sortTestNames('Notes').filter(n=>n!=='sortspec.md'))===want);
-  `);
   const notices = () => evaluate<string[]>("return JSON.stringify([...document.querySelectorAll('.notice')].map(n=>n.textContent));");
   const reloadTabularium = `
     await app.plugins.disablePlugin('tabularium');
     await app.plugins.enablePlugin('tabularium');
-    const deadline=Date.now()+30000;
-    while(!app.plugins.plugins['tabularium']?.core?.services.appLifecycle.isReady() && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
+    const ready=Date.now()+30000;
+    while(!app.plugins.plugins['tabularium']?.core?.services.appLifecycle.isReady() && Date.now()<ready) await new Promise(r=>setTimeout(r,100));
   `;
-
   await evaluate(`
     await app.plugins.loadManifests();
     await app.plugins.disablePlugin('tabularium');
     await app.plugins.enablePluginAndSave('custom-sort');
     await app.plugins.plugins['custom-sort'].switchPluginStateTo(true);
-    await app.plugins.enablePlugin('tabularium');
-    const deadline=Date.now()+30000;
-    while(!app.plugins.plugins['tabularium']?.core?.services.appLifecycle.isReady() && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
-    if(app.plugins.plugins['tabularium'].sorting) throw new Error('Both sorting components enabled');
+    ${reloadTabularium}
+    if(${sorting}) throw new Error('Both sorting components enabled');
     return JSON.stringify(true);
   `);
-  assert.equal(await sortedBySpec(), true, 'Custom File Explorer sorting sorts the files');
+  assert.deepEqual(await shown('Notes', ['Zeta.md', 'Alpha.md', 'Beta.md']), ['Zeta.md', 'Alpha.md', 'Beta.md'], 'Custom File Explorer sorting sorts the files');
   assert.deepEqual((await notices()).filter(text => /Custom (Sort|File Explorer)/.test(text ?? '')), [], 'no request to disable the standalone plug-in');
   report.scenarios.push('standalone-plugin-sorts-and-built-in-stays-off');
 
   await evaluate(`
     await app.plugins.disablePluginAndSave('custom-sort');
     ${reloadTabularium}
-    const sorting=app.plugins.plugins['tabularium'].sorting;
-    if(!sorting?.ready) throw new Error('Built-in sorting not back after disabling the standalone plug-in');
-    sorting.switchPluginStateTo(true);
+    ${untilTakenOver}
     return JSON.stringify(true);
   `);
-  assert.equal(await sortedBySpec(), true, 'the built-in sorting is back');
+  assert.deepEqual(await shown('Notes', ['Zeta.md', 'Alpha.md', 'Beta.md']), ['Zeta.md', 'Alpha.md', 'Beta.md'], 'the built-in sorting is back');
   report.scenarios.push('standalone-disabled-built-in-returns-on-reload');
 
   await evaluate(`
-    const plugin=app.plugins.plugins['tabularium'];
-    const sorting=plugin.sorting;
+    const sorting=${sorting};
     await app.plugins.enablePluginAndSave('custom-sort');
-    // The next take-over, as the command or a layout change would start it.
-    sorting.switchPluginStateTo(true);
-    if(!sorting.steppedAside || sorting.ready) throw new Error('Built-in sorting did not step aside');
-    if(plugin._children?.includes(sorting)) throw new Error('Built-in sorting still loaded');
+    // The next take-over, as a rules edit or a command would start it.
+    sorting.refresh();
+    if(!sorting.steppedAside || app.plugins.plugins['tabularium'].sorting?._loaded) throw new Error('Built-in sorting did not step aside');
     await app.plugins.plugins['custom-sort'].switchPluginStateTo(true);
     return JSON.stringify(true);
   `);
-  assert.equal(await sortedBySpec(), true, 'Custom File Explorer sorting sorts the files after the built-in stepped aside');
+  assert.deepEqual(await shown('Notes', ['Zeta.md', 'Alpha.md', 'Beta.md']), ['Zeta.md', 'Alpha.md', 'Beta.md'], 'Custom File Explorer sorting sorts after the built-in stepped aside');
   await evaluate("await app.plugins.disablePluginAndSave('custom-sort');return JSON.stringify(true);");
   report.scenarios.push('standalone-enabled-while-running-built-in-steps-aside');
   report.status = 'passed';

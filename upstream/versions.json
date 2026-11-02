@@ -51,15 +51,11 @@
       "repository": "https://github.com/SebastianMC/obsidian-custom-sort",
       "commit": "6100b0c664988b08460c0b7312f77d98770fe3fa",
       "version": "3.2.0",
-      "role": "file-sorting",
+      "role": "coexistence",
       "author": "SebastianMC",
-      "licenseFiles": {
-        "LICENSE": "58340ddba3343608dc4835d119861ef8d35f9af8dede9b83dc4c4bdebc4a329c",
-        "LICENSE.md": "6a5e2097e1347f38b94e92707d21921eae3acf140a2082fb3e92a0d69fc59452"
-      },
       "license": "MIT",
       "licenseDecision": "2026-10-29: follow the upstream package.json MIT declaration (decided by the project owner); LICENSE and LICENSE.md kept as upstream records",
-      "coexistence": "Built unchanged by tests/interop/prepare-upstream-plugins.sh as the standalone Custom File Explorer sorting plug-in in the desktop sorting scenarios."
+      "coexistence": "Built unchanged by tests/interop/prepare-upstream-plugins.sh as the standalone Custom File Explorer sorting plug-in in the desktop sorting scenarios; no code of it is in Tabularium."
     }
   ],
   "toolchain": {
