@@ -6,7 +6,7 @@ Tabularium est ministrator domi hospitatus qui tabularia commentariorum cryptogr
 
 Paginae interretiales etiam commentarios interretiales continent: commentarii in navigatro legi et emendari possunt, et pluribus modis in interrete publico communicari (ab omnibus aut sola tessera legendi, nexu ad tempus valido aut perpetuo); commentarios etiam ad Kindle tuum mittere potes. Communicatio commentariorum in interrete et missio ad Kindle etiam in additamento Obsidian praebentur.
 
-Praeter synchronizationem paginae interretiales ministratoris administrationem, exempla tutelaria statuta et administratorem artificialem cui nomen est Tabularius (scribam tabularii) praebent, quem dominus tabularii singulis tabulariis accendere potest. Pluribus API (OpenAI, Anthropic, Google Gemini, DeepSeek) et machinis inferentiae exemplarium localiter institutorum (vLLM, Ollama) uti potest. Scribae etiam quaestionem RAG addere potes, si ministratorem RAGFlow instituisti.
+Praeter synchronizationem paginae interretiales ministratoris administrationem, exempla tutelaria statuta et administratorem artificialem cui nomen est Tabularius (scribam tabularii) praebent, quem dominus tabularii singulis tabulariis accendere potest. Pluribus API (OpenAI, Anthropic, Google Gemini, DeepSeek) et machinis inferentiae exemplarium localiter institutorum (vLLM, Ollama, TensorRT-LLM) uti potest; rationes omnia mandata quae cuiusque praebitoris API accipit statuere possunt. Scribae etiam quaestionem RAG addere potes, si ministratorem RAGFlow instituisti.
 
 ## Repositoria codicis
 

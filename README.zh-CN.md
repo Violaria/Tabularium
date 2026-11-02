@@ -6,7 +6,7 @@ Tabularium 是一个自部署的笔记库同步服务器，采用端到端加密
 
 网页端还支持在线云笔记，云笔记可以在浏览器中阅读和编辑笔记，可以以多种形式（公开查看或需密码查看、限时有效的链接或长期有效的链接）将笔记分享到公共互联网上，你还可以将你的笔记发送到你的 Kindle 设备上。将笔记分享到互联网、将笔记推送到 Kindle 功能在 Obsidian 插件同样支持。
 
-除同步服务外，服务器网页端还提供笔记服务器管理、定时备份，以及 AI 管理员 Tabularius（笔记库书记员），笔记库的所有者可以为单个笔记库开启它。它支持接入多家 API（OpenAI、Anthropic、Google Gemini、DeepSeek）以及本地部署模型的推理引擎（vLLM、Ollama）。你还可以为书记员配置 RAG 检索，只要你部署了 RAGFlow 服务器。
+除同步服务外，服务器网页端还提供笔记服务器管理、定时备份，以及 AI 管理员 Tabularius（笔记库书记员），笔记库的所有者可以为单个笔记库开启它。它支持接入多家 API（OpenAI、Anthropic、Google Gemini、DeepSeek）以及本地部署模型的推理引擎（vLLM、Ollama、TensorRT-LLM）；配方可以设置各提供商接口接受的全部参数。你还可以为书记员配置 RAG 检索，只要你部署了 RAGFlow 服务器。
 
 ## 仓库
 

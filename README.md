@@ -6,7 +6,7 @@ Tabularium is a self-hosted server that synchronises note vaults with end-to-end
 
 The web pages also include web notes, which let you read and edit notes in the browser and share them on the public internet in several forms (viewable by anyone or only with a password, through a link that expires or one that does not), and you can send your notes to your Kindle. Sharing notes on the internet and sending them to Kindle are also available in the Obsidian plug-in.
 
-Besides synchronisation, the server's web pages provide server administration, scheduled backups, and Tabularius, an AI administrator (the vault's clerk) that a vault owner can enable for one vault at a time. It works with several APIs (OpenAI, Anthropic, Google Gemini, DeepSeek) and with inference engines for locally deployed models (vLLM, Ollama). You can also give the clerk RAG retrieval, if you run a RAGFlow server.
+Besides synchronisation, the server's web pages provide server administration, scheduled backups, and Tabularius, an AI administrator (the vault's clerk) that a vault owner can enable for one vault at a time. It works with several APIs (OpenAI, Anthropic, Google Gemini, DeepSeek) and with inference engines for locally deployed models (vLLM, Ollama, TensorRT-LLM); each recipe can set every parameter its provider's API accepts. You can also give the clerk RAG retrieval, if you run a RAGFlow server.
 
 ## Repositories
 
