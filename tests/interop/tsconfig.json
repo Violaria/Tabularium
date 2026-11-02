@@ -2,7 +2,10 @@
   "extends": "../../apps/obsidian/tsconfig.json",
   "compilerOptions": {
     "types": [
-      "node"
+      "node",
+      "pouchdb-replication",
+      "pouchdb-adapter-http",
+      "pouchdb-mapreduce"
     ],
     "typeRoots": [
       "../../apps/obsidian/node_modules/@types"
