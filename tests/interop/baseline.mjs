@@ -402,7 +402,7 @@ try {
     assert.equal(await readFile(received, 'utf8'), '# Written after fetching the rebuilt database\n');
   });
   // Runs a real-Obsidian script against the gateway as a newly created user.
-  async function pluginScript(name, user) {
+  async function pluginScript(name, user, extra = {}) {
     const initial = randomBytes(12).toString('hex');
     await gateway.createUser(user, initial);
     const app = join(root, 'apps/obsidian');
@@ -411,13 +411,14 @@ try {
       cwd: app, timeout: 600_000, maxBuffer: 8 * 1024 * 1024,
       env: { ...process.env, DISPLAY: '', WAYLAND_DISPLAY: '', OBSIDIAN_BINARY: join(binaryRoot, 'obsidian'), OBSIDIAN_CLI: join(binaryRoot, 'obsidian-cli'),
         TABULARIUM_URL: origin.replace(/\/sync$/, ''), TABULARIUM_USER: user, TABULARIUM_PASSWORD: initial,
-        E2E_OBSIDIAN_CLEANUP_STALE_PROCESSES: 'false', BASELINE_RUN_DIR: runDir, KINDLE_MAIL_DIR: join(runDir, 'kindle-mail') },
+        E2E_OBSIDIAN_CLEANUP_STALE_PROCESSES: 'false', BASELINE_RUN_DIR: runDir, KINDLE_MAIL_DIR: join(runDir, 'kindle-mail'), ...extra },
     }).catch(error => { throw new Error(redact(`${error.message}\n${error.stdout}\n${error.stderr}`)); });
     await writeFile(join(runDir, `${name}.log`), redact(result.stdout + result.stderr));
   }
   if (gateway) await scenario('plugin-login', () => pluginScript('plugin-login', 'obsidian-user'));
   if (gateway) await scenario('send-to-kindle', () => pluginScript('send-to-kindle', 'kindle-user'));
   if (gateway) await scenario('share-from-obsidian', () => pluginScript('share-from-obsidian', 'share-user'));
+  if (gateway) await scenario('live-sync-pause', () => pluginScript('live-sync-pause', 'pause-user'));
   await scenario('desktop-obsidian', async () => {
     if (gateway) { await runGatewayDesktop(false); return; }
     const app = join(root, 'apps/obsidian');
