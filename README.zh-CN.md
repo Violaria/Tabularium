@@ -15,7 +15,7 @@ Tabularium 是一个自部署的笔记库同步服务器，采用端到端加密
 | 路径 | 仓库 | 内容 |
 | --- | --- | --- |
 | `apps/server` | [Tabularium-Server](https://github.com/Violaria/Tabularium-Server) | Node.js 网关、SQLite 应用库、网页应用、Tabularius |
-| `apps/obsidian` | [Tabularium-Obsidian](https://github.com/Violaria/Tabularium-Obsidian) | Obsidian 插件，fork 自 Self-hosted LiveSync；云笔记和服务器所用 LiveSync CLI 的源码也在这里 |
+| `apps/obsidian` | [Tabularium-Obsidian](https://github.com/Violaria/Tabularium-Obsidian) | Obsidian 插件；云笔记和服务器所用命令行客户端的源码也在这里 |
 | `deploy/` | 本仓库 | Compose 文件，备份、恢复、升级与回退工具，发布包构建 |
 | `tests/` | 本仓库 | 跨组件的测试：真实客户端同步、Tabularius 端到端、备份、发布包 |
 

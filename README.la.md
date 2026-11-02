@@ -15,7 +15,7 @@ Hoc est repositorium parens. Ministrator et additamentum submoduli sunt cum repo
 | Via | Repositorium | Contentum |
 | --- | --- | --- |
 | `apps/server` | [Tabularium-Server](https://github.com/Violaria/Tabularium-Server) | porta Node.js, repositorium applicationis SQLite, applicatio interretialis, Tabularius |
-| `apps/obsidian` | [Tabularium-Obsidian](https://github.com/Violaria/Tabularium-Obsidian) | additamentum Obsidian, ramus Self-hosted LiveSync; etiam fons commentariorum interretialium et LiveSync CLI quo ministrator utitur |
+| `apps/obsidian` | [Tabularium-Obsidian](https://github.com/Violaria/Tabularium-Obsidian) | additamentum Obsidian; etiam fons commentariorum interretialium et clientis lineae mandatorum quo ministrator utitur |
 | `deploy/` | hic | plicae Compose, instrumenta exemplorum tutelarium, restitutionis, renovationis et reversionis, constructio editionis |
 | `tests/` | hic | probationes per partes: synchronizatio cum clientibus veris, Tabularius ab initio ad finem, exempla tutelaria, fasciculi editionis |
 

@@ -6,8 +6,7 @@ interface LockEntry { version?: string; license?: string; licenses?: { type: str
 // Packages of the plug-in workspace itself, under the plug-in's MIT licence,
 // and dependencies whose package metadata omits a licence their files state.
 const known: Record<string, string> = {
-  'livesync-webapp': 'MIT',
-  'self-hosted-livesync-cli': 'MIT',
+  'tabularium-cli': 'MIT',
   'webpeer': 'MIT',
   // A Mermaid dependency whose package.json names no licence; its licence file is MIT.
   'khroma': 'MIT',
@@ -72,7 +71,7 @@ export async function licenceList(root: string, images: { nodeImage: string; cou
 
 ## Obsidian 插件
 
-插件以 MIT 许可发布（插件目录中的 LICENSE），起点是 Self-hosted LiveSync（作者 vorotamoroz，MIT，版权与许可声明见插件目录中的 NOTICE.md）。同步核心 \`@tabularium/sync-core\` 派生自 Self-hosted LiveSync 的公共库 Commonlib（作者 vorotamoroz，MIT，Copyright (c) 2022 vorotamoroz；起点为上游提交 \`3ecb95b\`，即 npm 上的 \`@vrtmrz/livesync-commonlib\` 0.2.1），删去了 Tabularium 不用的远端与传输方式，来源与改动记录在插件仓库的 \`packages/sync-core/UPSTREAM.md\`。下表列出插件工程的全部生产依赖，打包进 \`main.js\` 的是其中被插件引用的部分。
+插件以 MIT 许可发布（插件目录中的 LICENSE）。插件与同步核心 \`@tabularium/sync-core\` 的部分代码派生自 vorotamoroz 的 MIT 代码（Copyright (c) 2021、2022 vorotamoroz），版权与许可声明见插件目录中的 NOTICE.md。下表列出插件工程的全部生产依赖，打包进 \`main.js\` 的是其中被插件引用的部分。
 
 ${copyleft.length ? `需要单独说明的组件：\n\n${copyleft.join('\n')}\n\n` : ''}${sections.join('\n\n')}
 
@@ -80,7 +79,7 @@ ${copyleft.length ? `需要单独说明的组件：\n\n${copyleft.join('\n')}\n\
 
 - 运行时基础镜像 \`${images.nodeImage}\`：Node.js（MIT，附带组件见镜像内 /usr/local/share/doc 与 Node.js 的 LICENSE），Debian bookworm 基础系统（各软件包许可见镜像内 /usr/share/doc/*/copyright）。
 - CouchDB \`${images.couchImage}\`：Apache License 2.0，以官方镜像独立运行，未经修改。
-- npm 运行时依赖：网关用于 Tabularius 的提供商 SDK 与口令校验，以及 Tabularius 托管客户端使用的 Self-hosted LiveSync CLI（MIT，与插件同源）及其依赖。
+- npm 运行时依赖：网关用于 Tabularius 的提供商 SDK 与口令校验，以及 Tabularius 托管客户端使用的命令行客户端（MIT，与插件同源）及其依赖。
 
 ${serverCopyleft.length ? `需要单独说明的组件：\n\n${[...new Set(serverCopyleft)].join('\n')}\n\n` : ''}${serverSections.join('\n\n')}
 `;

@@ -68,7 +68,7 @@ try {
     // An MPL component is named with where its unmodified source is; the in-repository sync core with its upstream origin.
     assert.match(licences, /dompurify@.*MPL-2\.0.*源码见/);
     assert.match(licences, /- @tabularium\/sync-core@0\.2\.1/);
-    assert.match(licences, /Commonlib（作者 vorotamoroz，MIT.*3ecb95b/);
+    assert.match(licences, /派生自 vorotamoroz 的 MIT 代码.*NOTICE\.md/);
   });
 
   const port = await freePort(), httpsPort = await freePort();

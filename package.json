@@ -13,11 +13,11 @@
   "scripts": {
     "bootstrap": "npm ci && npm ci --prefix apps/obsidian && npm run build:core --prefix apps/obsidian",
     "check": "npm run check:server && npm run check:backup && npm run check:release && node --check tests/interop/gateway-baseline.mjs && node --check tests/interop/baseline.mjs && node apps/obsidian/node_modules/typescript/bin/tsc -p tests/interop/tsconfig.json && npm run check --prefix apps/obsidian",
-    "build": "npm run build:server && npm run build --prefix apps/obsidian && npm run build --prefix apps/obsidian --workspace self-hosted-livesync-cli",
+    "build": "npm run build:server && npm run build --prefix apps/obsidian && npm run build --prefix apps/obsidian --workspace tabularium-cli",
     "test:unit": "npm run test:unit --prefix apps/obsidian",
     "test:baseline": "node tests/interop/baseline.mjs",
     "build:server": "npm run build:notes && npm run build:cli && npm run build --workspace @tabularium/server",
-    "build:cli": "npm run build --prefix apps/obsidian --workspace self-hosted-livesync-cli && node apps/server/build-cli.mjs",
+    "build:cli": "npm run build --prefix apps/obsidian --workspace tabularium-cli && node apps/server/build-cli.mjs",
     "build:notes": "npm run build:notes --prefix apps/obsidian",
     "check:server": "npm run check --workspace @tabularium/server",
     "test:server": "npm run build:notes && npm test --workspace @tabularium/server",

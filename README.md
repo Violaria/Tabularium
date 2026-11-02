@@ -15,7 +15,7 @@ This is the parent repository. The server and the plug-in are submodules with th
 | Path | Repository | Contents |
 | --- | --- | --- |
 | `apps/server` | [Tabularium-Server](https://github.com/Violaria/Tabularium-Server) | Node.js gateway, SQLite application database, web app, Tabularius |
-| `apps/obsidian` | [Tabularium-Obsidian](https://github.com/Violaria/Tabularium-Obsidian) | Obsidian plug-in, a fork of Self-hosted LiveSync; also the source of the browser client and of the LiveSync CLI the server runs |
+| `apps/obsidian` | [Tabularium-Obsidian](https://github.com/Violaria/Tabularium-Obsidian) | Obsidian plug-in; also the source of the browser client and of the command-line client the server runs |
 | `deploy/` | here | Compose files, backup, restore, upgrade and rollback tools, release build |
 | `tests/` | here | Tests across components: real-client synchronisation, Tabularius end to end, backups, release packages |
 
