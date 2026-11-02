@@ -21,7 +21,7 @@ const dbName = provisioned ? config.dbPrefix : `fast-fetch-${Date.now()}`;
 const temporary = await mkdtemp(join(process.env.BASELINE_RUN_DIR!, 'fast-fetch-'));
 const vault = await createTemporaryVault();
 await pinObsidianRuntime(vault);
-const cli = resolve('src/apps/cli/dist/index.cjs');
+const cli = resolve('../server/clients/cli/dist/index.cjs');
 const database = join(temporary, 'database');
 const settingsPath = join(temporary, 'settings.json');
 const note = '# Fast Fetch\n\n浏览器流式获取。\n';

@@ -21,7 +21,7 @@ const password = randomBytes(24).toString('hex');
 const passphrase = randomBytes(24).toString('hex');
 const env = { ...process.env, BASELINE_PASSWORD: password };
 const composeArgs = ['compose', '-f', join(root, 'deploy/test/compose.yaml'), '-p', runId];
-const cliPath = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
+const cliPath = join(root, 'apps/server/clients/cli/dist/index.cjs');
 const report = {
   runId, node: process.version, commonlib: '0.2.1', legacyCommonlib: '0.2.0', obsidian: '1.14.5',
   couchdb: '3.5.3@sha256:bed314d10cdf58c0fff63352db4c3f168df58a185a773c0e2295105375c5ef10',
@@ -427,7 +427,7 @@ try {
     if (gateway) { await runGatewayDesktop(false); return; }
     const app = join(root, 'apps/obsidian');
     const binaryRoot = join(app, '_testdata/obsidian-1.14.5/squashfs-root');
-    const result = await exec('npm', ['run', 'test:e2e:obsidian:cli-to-obsidian-sync'], {
+    const result = await exec(process.execPath, [join(app, 'node_modules/tsx/dist/cli.mjs'), '--tsconfig', join(app, 'tsconfig.json'), join(root, 'tests/interop/cli-to-obsidian-sync.ts')], {
       cwd: app, timeout: 180_000, maxBuffer: 8 * 1024 * 1024,
       env: { ...process.env, DISPLAY: '', WAYLAND_DISPLAY: '', OBSIDIAN_BINARY: join(binaryRoot, 'obsidian'), OBSIDIAN_CLI: join(binaryRoot, 'obsidian-cli'),
         COUCHDB_URI: origin, COUCHDB_USER: 'baseline', COUCHDB_PASSWORD: password, COUCHDB_DBNAME: 'desktop-baseline',

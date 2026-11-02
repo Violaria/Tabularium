@@ -1,6 +1,6 @@
 {
   "name": "tabularium",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Hanae Nanako",
   "license": "MIT",
   "private": true,
@@ -12,13 +12,13 @@
   "packageManager": "npm@11.6.1",
   "scripts": {
     "bootstrap": "npm ci && npm ci --prefix apps/obsidian && npm run build:core --prefix apps/obsidian",
-    "check": "npm run check:server && npm run check:backup && npm run check:release && node --check tests/interop/gateway-baseline.mjs && node --check tests/interop/baseline.mjs && node apps/obsidian/node_modules/typescript/bin/tsc -p tests/interop/tsconfig.json && npm run check --prefix apps/obsidian",
-    "build": "npm run build:server && npm run build --prefix apps/obsidian && npm run build --prefix apps/obsidian --workspace tabularium-cli",
-    "test:unit": "npm run test:unit --prefix apps/obsidian",
+    "check": "npm run check:server && npm run check:clients && node scripts/share-texts.mjs --check && npm run check:backup && npm run check:release && node --check tests/interop/gateway-baseline.mjs && node --check tests/interop/baseline.mjs && node apps/obsidian/node_modules/typescript/bin/tsc -p tests/interop/tsconfig.json && npm run check --prefix apps/obsidian",
+    "build": "npm run build:server && npm run build --prefix apps/obsidian",
+    "test:unit": "npm run test:unit --prefix apps/obsidian && npm run test:clients",
     "test:baseline": "node tests/interop/baseline.mjs",
     "build:server": "npm run build:notes && npm run build:cli && npm run build --workspace @tabularium/server",
-    "build:cli": "npm run build --prefix apps/obsidian --workspace tabularium-cli && node apps/server/build-cli.mjs",
-    "build:notes": "npm run build:notes --prefix apps/obsidian",
+    "build:cli": "npm run build:core --prefix apps/obsidian && apps/obsidian/node_modules/.bin/vite build --config apps/server/clients/cli/vite.config.ts apps/server/clients/cli && node apps/server/build-cli.mjs",
+    "build:notes": "npm run build:core --prefix apps/obsidian && apps/obsidian/node_modules/.bin/vite build --config apps/server/clients/notes/vite.config.ts apps/server/clients/notes",
     "check:server": "npm run check --workspace @tabularium/server",
     "test:server": "npm run build:notes && npm test --workspace @tabularium/server",
     "test:tabularius": "npm run build:server && node --test tests/tabularius/*.e2e.mjs",
@@ -36,7 +36,9 @@
     "test:backup": "npm run build:notes && npm run build:cli && node --test --test-concurrency=1 tests/backup/*.test.mjs",
     "test:backup:clients": "npm run build:notes && npm run build:cli && node tests/backup/clients.mjs",
     "test:notes:browser": "npm run build:server && node --test --test-concurrency=1 tests/notes/*.e2e.mjs",
-    "test:server:browser": "npm run build:notes && npm run test:browser --workspace @tabularium/server"
+    "test:server:browser": "npm run build:notes && npm run test:browser --workspace @tabularium/server",
+    "test:clients": "npm run build:core --prefix apps/obsidian && cd apps/obsidian && node_modules/.bin/vitest run --config ../server/clients/vitest.config.ts && node_modules/.bin/vitest run --config ../server/clients/notes/vite.config.ts --dir ../server/clients/notes",
+    "check:clients": "npm run build:core --prefix apps/obsidian && cd apps/obsidian && for app in notes cli browser webapp; do node_modules/.bin/tsc --noEmit -p ../server/clients/$app/tsconfig.json || exit 1; done && node_modules/.bin/tsx _tools/checkOwnNames.ts ../server/clients"
   },
   "workspaces": [
     "apps/server"

@@ -17,7 +17,7 @@ import { createFilter } from '../../apps/server/dist/tabularius/filter.js';
 
 const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, '../..');
-const cliPath = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
+const cliPath = join(root, 'apps/server/clients/cli/dist/index.cjs');
 const sourceVault = resolve(process.argv[2] ?? '/opt/obsidian/Commentarii');
 const env = name => { const value = process.env[name]; if (!value) throw new Error(`${name} is required`); return value; };
 const providerName = process.env.TABULARIUS_PROVIDER ?? 'vllm';

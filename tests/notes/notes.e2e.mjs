@@ -15,7 +15,7 @@ import { epubErrors } from '../kindle/epubcheck.ts';
 
 const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, '../..');
-const cliPath = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
+const cliPath = join(root, 'apps/server/clients/cli/dist/index.cjs');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
 test('web notes page in real Chromium', { timeout: 600_000 }, async () => {

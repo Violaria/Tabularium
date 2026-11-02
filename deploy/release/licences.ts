@@ -6,7 +6,6 @@ interface LockEntry { version?: string; license?: string; licenses?: { type: str
 // Packages of the plug-in workspace itself, under the plug-in's MIT licence,
 // and dependencies whose package metadata omits a licence their files state.
 const known: Record<string, string> = {
-  'tabularium-cli': 'MIT',
   'webpeer': 'MIT',
   // A Mermaid dependency whose package.json names no licence; its licence file is MIT.
   'khroma': 'MIT',

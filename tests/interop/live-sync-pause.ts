@@ -17,7 +17,7 @@ const initialPassword = process.env.TABULARIUM_PASSWORD!;
 const password = randomBytes(12).toString('hex');
 const passphrase = randomBytes(16).toString('hex');
 const obsidianCli = process.env.OBSIDIAN_CLI!;
-const cli = resolve('src/apps/cli/dist/index.cjs');
+const cli = resolve('../server/clients/cli/dist/index.cjs');
 const temporary = await mkdtemp(join(process.env.BASELINE_RUN_DIR!, 'live-sync-pause-'));
 const step = (name: string) => console.log(`[live-sync-pause] ${name}`);
 /** Long enough for live sync to have sent an edit if it were running. */

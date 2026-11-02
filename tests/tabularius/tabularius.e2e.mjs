@@ -18,7 +18,7 @@ import { startMockProviders } from './mock-providers.mjs';
 
 const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, '../..');
-const cliPath = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
+const cliPath = join(root, 'apps/server/clients/cli/dist/index.cjs');
 const until = async (what, check, ms = 90_000) => {
   const end = Date.now() + ms;
   let last;

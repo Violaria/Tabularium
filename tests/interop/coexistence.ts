@@ -23,7 +23,7 @@ const password = randomBytes(12).toString('hex');
 const passphrase = randomBytes(16).toString('hex');
 const livesyncPassphrase = randomBytes(16).toString('hex');
 const obsidianCli = process.env.OBSIDIAN_CLI!;
-const cli = resolve('src/apps/cli/dist/index.cjs');
+const cli = resolve('../server/clients/cli/dist/index.cjs');
 const upstreamPlugin = resolve('../../.test-runs/upstream-plugins/obsidian-livesync');
 if (!existsSync(join(upstreamPlugin, 'main.js'))) throw new Error(`Missing ${upstreamPlugin}; run tests/interop/prepare-upstream-plugins.sh`);
 const temporary = await mkdtemp(join(process.env.BASELINE_RUN_DIR!, 'coexistence-'));

@@ -13,7 +13,7 @@ import { createGateway } from '../../apps/server/dist/server.js';
 
 const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, '../..');
-const cliPath = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
+const cliPath = join(root, 'apps/server/clients/cli/dist/index.cjs');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
 test('editing on the web notes page', { timeout: 900_000 }, async () => {

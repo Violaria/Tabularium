@@ -19,7 +19,7 @@ const initialPassword = process.env.TABULARIUM_PASSWORD!;
 const password = randomBytes(12).toString('hex');
 const passphrase = randomBytes(16).toString('hex');
 const obsidianCli = process.env.OBSIDIAN_CLI!;
-const cli = resolve('src/apps/cli/dist/index.cjs');
+const cli = resolve('../server/clients/cli/dist/index.cjs');
 const temporary = await mkdtemp(join(process.env.BASELINE_RUN_DIR!, 'plugin-login-'));
 const notes: Record<string, string | Uint8Array> = {
   'notes/登录测试.md': '# 登录测试\n\n由插件登录后上传。\n',

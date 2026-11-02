@@ -18,7 +18,7 @@ const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, '../..');
 const BACKUP = join(root, 'deploy/backup/cli.ts');
 const COMPOSE = join(root, 'deploy/local/compose.yaml');
-const CLIENT = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
+const CLIENT = join(root, 'apps/server/clients/cli/dist/index.cjs');
 const docker = async (...args) => (await exec('docker', args, { maxBuffer: 64 * 1024 * 1024 })).stdout;
 
 async function backupCli(...args) {
