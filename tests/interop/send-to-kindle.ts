@@ -79,7 +79,7 @@ try {
   assert((await received(before + 4, '子.epub')).includes('第二篇正文'));
 
   step('the display language switches the menu to Latin');
-  const latin = JSON.parse(await readFile(new URL('../../apps/obsidian/src/common/messagesJson/la.json', import.meta.url), 'utf8'))['tabularium.kindle.sendItems'].replace('${count}', '2');
+  const latin = JSON.parse(await readFile(new URL('../../apps/obsidian/src/core/common/messagesJson/la.json', import.meta.url), 'utf8'))['tabularium.kindle.sendItems'].replace('${count}', '2');
   await plugin(session, "await p.core.services.setting.applyPartial({displayLanguage:'la'},true);return JSON.stringify(true);");
   const latinTitle = await until(async () => {
     const shown = await plugin(session, menuTitle);
