@@ -115,13 +115,15 @@ async function daemon(client) {
     '--vault', client.vault, 'daemon'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
   processes.add(child);
   let output = '';
-  child.stdout.on('data', data => { output += data; });
-  child.stderr.on('data', data => { output += data; });
+  // The log is written as it grows, so it is there also when a scenario gives up on a daemon that still runs.
+  const log = join(client.db, '../daemon.log');
+  const record = (data) => { output += data; void writeFile(log, redact(output)); };
+  child.stdout.on('data', record);
+  child.stderr.on('data', record);
   child.once('exit', () => processes.delete(child));
-  child.once('exit', () => { void writeFile(join(client.db, '../daemon.log'), redact(output)); });
   await waitFor(async () => {
     assert.equal(child.exitCode, null, redact(output));
-    return output.includes('[Daemon] LiveSync active');
+    return output.includes('[Daemon] Tabularium active');
   }).catch(error => { throw new Error(`${error.message}\n${redact(output)}`); });
   return child;
 }

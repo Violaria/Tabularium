@@ -108,7 +108,7 @@ async function upgrade(name: string, withUpstream: boolean) {
       const dialogues = await evaluate(session!, "return JSON.stringify([...document.querySelectorAll('.modal')].map(m=>m.textContent?.slice(0,400)));").catch(String);
       throw new Error(`${(error as Error).message}\nOpen dialogues: ${JSON.stringify(dialogues)}`);
     });
-    assert.equal(after.database, `${vault.name}-tabularium-v2`);
+    assert.equal(after.database, `${vault.name}-tabularium-localdb`);
     assert.equal(await until(async () => await readFile(join(vault!.path, 'notes/关闭期间.md'), 'utf8').catch(() => undefined)), '# 关闭期间\n');
     assert.equal(await readFile(join(vault.path, 'notes/升级前.md'), 'utf8'), '# 升级前\n\n关闭期间在本机改过。\n', 'the local edit was kept');
     assert.equal(await until(async () => (await onServer('notes/升级前.md'))?.includes('关闭期间在本机改过') || undefined).catch(async (error) => {
@@ -185,7 +185,7 @@ async function rename026() {
       const state = await deviceState(session!).catch(() => undefined);
       return state?.ready ? state : undefined;
     }, 120_000);
-    assert.equal(after.database, `${vault.name}-tabularium-v2`);
+    assert.equal(after.database, `${vault.name}-tabularium-localdb`);
     assert.equal(after.pending, '');
     for (const old of [`_pouch_${vault.name}-tabularium-livesync-v2`, `${vault.name}-tabularium-livesync-kv`])
       assert(!after.databases.includes(old), `${old} removed: ${after.databases.join(', ')}`);
