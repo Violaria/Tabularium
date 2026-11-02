@@ -1,6 +1,6 @@
 {
   "name": "tabularium",
-  "version": "0.26.2",
+  "version": "0.26.3",
   "author": "Hanae Nanako",
   "license": "MIT",
   "private": true,
@@ -24,6 +24,7 @@
     "test:tabularius": "npm run build:server && node --test tests/tabularius/*.e2e.mjs",
     "start:server": "npm start --workspace @tabularium/server",
     "test:gateway": "npm run build:server && node tests/interop/baseline.mjs --gateway",
+    "test:settings:obsidian": "npm run build --prefix apps/obsidian && npm run test:tabularium:settings --prefix apps/obsidian",
     "test:sorting:obsidian": "npm run build --prefix apps/obsidian && npm run test:tabularium:sorting --prefix apps/obsidian",
     "check:backup": "tsc -p deploy/backup",
     "check:release": "tsc -p deploy/release",

@@ -23,7 +23,7 @@ const env = { ...process.env, BASELINE_PASSWORD: password };
 const composeArgs = ['compose', '-f', join(root, 'deploy/test/compose.yaml'), '-p', runId];
 const cliPath = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
 const report = {
-  runId, node: process.version, commonlib: '0.2.1', legacyCommonlib: '0.2.0', obsidian: '1.12.7',
+  runId, node: process.version, commonlib: '0.2.1', legacyCommonlib: '0.2.0', obsidian: '1.14.5',
   couchdb: '3.5.3@sha256:bed314d10cdf58c0fff63352db4c3f168df58a185a773c0e2295105375c5ef10',
   command: gatewayMode ? 'npm run test:gateway' : 'npm run test:baseline', mode: gatewayMode ? 'gateway' : 'direct', encryption: { algorithm: 'v2', pathObfuscation: true },
   scenarios: [], requests: [],
@@ -137,7 +137,7 @@ async function runGatewayDesktop(fast) {
   await gateway.create(name);
   const credentials = await gateway.credentials(name, name);
   const app = join(root, 'apps/obsidian');
-  const binaryRoot = join(app, '_testdata/obsidian-1.12.7/squashfs-root');
+  const binaryRoot = join(app, '_testdata/obsidian-1.14.5/squashfs-root');
   const result = await exec(process.execPath, [join(app, 'node_modules/tsx/dist/cli.mjs'),
     '--tsconfig', join(app, 'tsconfig.json'), join(root, 'tests/interop/fast-fetch.ts')], {
     cwd: app, timeout: 180_000, maxBuffer: 8 * 1024 * 1024,
@@ -408,7 +408,7 @@ try {
     const initial = randomBytes(12).toString('hex');
     await gateway.createUser(user, initial);
     const app = join(root, 'apps/obsidian');
-    const binaryRoot = join(app, '_testdata/obsidian-1.12.7/squashfs-root');
+    const binaryRoot = join(app, '_testdata/obsidian-1.14.5/squashfs-root');
     const result = await exec(process.execPath, [join(app, 'node_modules/tsx/dist/cli.mjs'), '--tsconfig', join(app, 'tsconfig.json'), join(root, `tests/interop/${name}.ts`)], {
       cwd: app, timeout: 600_000, maxBuffer: 8 * 1024 * 1024,
       env: { ...process.env, DISPLAY: '', WAYLAND_DISPLAY: '', OBSIDIAN_BINARY: join(binaryRoot, 'obsidian'), OBSIDIAN_CLI: join(binaryRoot, 'obsidian-cli'),
@@ -424,7 +424,7 @@ try {
   await scenario('desktop-obsidian', async () => {
     if (gateway) { await runGatewayDesktop(false); return; }
     const app = join(root, 'apps/obsidian');
-    const binaryRoot = join(app, '_testdata/obsidian-1.12.7/squashfs-root');
+    const binaryRoot = join(app, '_testdata/obsidian-1.14.5/squashfs-root');
     const result = await exec('npm', ['run', 'test:e2e:obsidian:cli-to-obsidian-sync'], {
       cwd: app, timeout: 180_000, maxBuffer: 8 * 1024 * 1024,
       env: { ...process.env, DISPLAY: '', WAYLAND_DISPLAY: '', OBSIDIAN_BINARY: join(binaryRoot, 'obsidian'), OBSIDIAN_CLI: join(binaryRoot, 'obsidian-cli'),
@@ -440,7 +440,7 @@ try {
       return;
     }
     const app = join(root, 'apps/obsidian');
-    const binaryRoot = join(app, '_testdata/obsidian-1.12.7/squashfs-root');
+    const binaryRoot = join(app, '_testdata/obsidian-1.14.5/squashfs-root');
     const result = await exec(process.execPath, [join(app, 'node_modules/tsx/dist/cli.mjs'),
       '--tsconfig', join(app, 'tsconfig.json'), join(root, 'tests/interop/fast-fetch.ts')], {
       cwd: app, timeout: 180_000, maxBuffer: 8 * 1024 * 1024,

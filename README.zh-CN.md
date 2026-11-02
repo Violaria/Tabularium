@@ -28,8 +28,8 @@ Tabularium 是一个自部署的笔记库同步服务器，采用端到端加密
 ```bash
 git clone --recurse-submodules git@github.com:Violaria/Tabularium.git
 cd Tabularium
-npm run bootstrap   # 安装工作区、排序包和插件的依赖
-npm run build       # 服务器、排序包、插件 main.js、CLI
+npm run bootstrap   # 安装工作区和插件的依赖
+npm run build       # 服务器、插件 main.js、CLI
 npm run check       # 全部类型检查与 lint
 ```
 

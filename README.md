@@ -28,8 +28,8 @@ Node.js 24.10.0 and npm 11.6.1 are required (see `.nvmrc` and `engines` in `pack
 ```bash
 git clone --recurse-submodules git@github.com:Violaria/Tabularium.git
 cd Tabularium
-npm run bootstrap   # dependencies of the workspace, the sorting package and the plug-in
-npm run build       # server, sorting package, plug-in main.js, CLI
+npm run bootstrap   # dependencies of the workspace and the plug-in
+npm run build       # server, plug-in main.js, CLI
 npm run check       # type checks and lint for everything
 ```
 

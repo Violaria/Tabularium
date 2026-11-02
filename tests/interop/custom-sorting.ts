@@ -1,4 +1,4 @@
-// File sorting in real Obsidian: the order from the list in sortspec.md, live updates, pausing and unloading, converting
+// File sorting in real Obsidian: the order from the list in Collation.md, live updates, pausing and unloading, converting
 // the former front-matter rules, and stepping aside for the standalone Custom File Explorer sorting plug-in.
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, writeFile, readFile } from 'node:fs/promises';
@@ -12,7 +12,7 @@ const root = resolve('../..');
 const runId = `sorting-${Date.now()}`;
 const reportDir = join(root, 'test-runs', runId);
 await mkdir(reportDir, { recursive: true });
-const binaryRoot = resolve('_testdata/obsidian-1.12.7/squashfs-root');
+const binaryRoot = resolve('_testdata/obsidian-1.14.5/squashfs-root');
 // The standalone Custom File Explorer sorting plug-in, built from the commit in upstream/versions.json.
 const standalone = resolve('../../.test-runs/upstream-plugins/custom-sort');
 if (!existsSync(join(standalone, 'main.js'))) throw new Error(`Missing ${standalone}; run tests/interop/prepare-upstream-plugins.sh`);
@@ -25,9 +25,9 @@ for (const folder of ['Notes', 'Default']) {
   for (const name of ['Alpha', 'Beta', 'Zeta']) await writeFile(join(vault.path, folder, `${name}.md`), `# ${name}\n`);
 }
 const rules = ['文件的顺序。', '', '- Notes —— 笔记放最前', '  - Zeta', '  - ...', '  - Alpha —— 最后读', '- Default', ''].join('\n');
-await writeFile(join(vault.path, 'sortspec.md'), rules);
+await writeFile(join(vault.path, 'Collation.md'), rules);
 let session: ObsidianLiveSyncSession | undefined;
-const report: { runId: string; obsidian: string; scenarios: string[]; status?: string; error?: string } = { runId, obsidian: '1.12.7', scenarios: [] };
+const report: { runId: string; obsidian: string; scenarios: string[]; status?: string; error?: string } = { runId, obsidian: '1.14.5', scenarios: [] };
 try {
   session = await startObsidianLiveSyncSession({ binary, cliBinary: cli, vault,
     pluginData: { isConfigured: false, couchDB_DBNAME: 'sorting-preserves-sync-config' },
@@ -57,30 +57,30 @@ try {
   `);
 
   assert.deepEqual(await shown('Notes', ['Zeta.md', 'Beta.md', 'Alpha.md']), ['Zeta.md', 'Beta.md', 'Alpha.md']);
-  assert.deepEqual(await shown('/', ['Notes', 'Default', 'sortspec.md']), ['Notes', 'Default', 'sortspec.md']);
+  assert.deepEqual(await shown('/', ['Notes', 'Default', 'Collation.md']), ['Notes', 'Default', 'Collation.md']);
   assert.deepEqual(await shown('Default'), ['Alpha.md', 'Beta.md', 'Zeta.md']);
   report.scenarios.push('list-with-notes-and-ellipsis');
 
-  // Reading view: the notes fold behind an icon in sortspec.md only.
+  // Reading view: the notes fold behind an icon in Collation.md only.
   await writeFile(join(vault.path, 'Default/Other.md'), '- a —— b\n');
   const reading = await evaluate<{ icons: number; label: string | null; hidden: boolean; open: boolean; other: number }>(`
     const read=async(path)=>{const leaf=app.workspace.getLeaf(true);await leaf.openFile(app.vault.getAbstractFileByPath(path),{state:{mode:'preview'}});await new Promise(r=>setTimeout(r,1500));return leaf.view.containerEl;};
     let deadline=Date.now()+10000;
     while(!app.vault.getAbstractFileByPath('Default/Other.md') && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
-    const view=await read('sortspec.md');
-    const icons=[...view.querySelectorAll('.markdown-reading-view .tabularium-sortspec-note')];
+    const view=await read('Collation.md');
+    const icons=[...view.querySelectorAll('.markdown-reading-view .tabularium-collation-note')];
     const text=icons[0]?.nextElementSibling;
     const hidden=text?getComputedStyle(text).display==='none':false;
     icons[0]?.click();
     const open=text?getComputedStyle(text).display!=='none':false;
-    const other=(await read('Default/Other.md')).querySelectorAll('.tabularium-sortspec-note').length;
+    const other=(await read('Default/Other.md')).querySelectorAll('.tabularium-collation-note').length;
     await app.vault.delete(app.vault.getAbstractFileByPath('Default/Other.md'));
     return JSON.stringify({icons:icons.length,label:icons[0]?.getAttribute('aria-label')??null,hidden,open,other});
   `);
   assert.deepEqual(reading, { icons: 2, label: '笔记放最前', hidden: true, open: true, other: 0 });
   report.scenarios.push('notes-folded-behind-an-icon-in-reading-view');
 
-  await evaluate(`await app.vault.modify(app.vault.getAbstractFileByPath('sortspec.md'), ${JSON.stringify(rules.replace('- Default', '- Default\n  - Beta'))});return JSON.stringify(true);`);
+  await evaluate(`await app.vault.modify(app.vault.getAbstractFileByPath('Collation.md'), ${JSON.stringify(rules.replace('- Default', '- Default\n  - Beta'))});return JSON.stringify(true);`);
   assert.deepEqual(await shown('Default', ['Beta.md', 'Alpha.md', 'Zeta.md']), ['Beta.md', 'Alpha.md', 'Zeta.md']);
   report.scenarios.push('edited-rules-apply-at-once');
 
@@ -104,9 +104,9 @@ try {
   assert.deepEqual(await shown('Notes', ['Zeta.md', 'Beta.md', 'Alpha.md']), ['Zeta.md', 'Beta.md', 'Alpha.md']);
   report.scenarios.push('unload-restores-method-and-reload-keeps-settings');
 
-  // Former front-matter rules: not read until converted on the settings page.
+  // The former note, sortspec.md with front-matter rules: not read until converted on the settings page.
   const former = '---\nsorting-spec: |-\n  target-folder: /\n  Default\n  Notes\n  target-folder: Notes\n  Beta\n  ...\n---\n\n说明。\n';
-  await evaluate(`await app.vault.modify(app.vault.getAbstractFileByPath('sortspec.md'), ${JSON.stringify(former)});return JSON.stringify(true);`);
+  await evaluate(`await app.vault.delete(app.vault.getAbstractFileByPath('Collation.md'));await app.vault.create('sortspec.md', ${JSON.stringify(former)});return JSON.stringify(true);`);
   assert.deepEqual(await shown('Notes', ['Alpha.md', 'Beta.md', 'Zeta.md']), ['Alpha.md', 'Beta.md', 'Zeta.md']);
   await evaluate(`
     let deadline=Date.now()+10000;
@@ -114,19 +114,20 @@ try {
     const done=${sorting}.convert('sortspec.md');
     let button;
     deadline=Date.now()+10000;
-    while(!(button=document.querySelector('.tabularium-confirm .mod-cta, .tabularium-confirm .mod-warning')) && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
+    while(!(button=document.querySelector('.tabularium-confirm .mod-cta, .tabularium-confirm .mod-destructive')) && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
     if(!document.querySelector('.tabularium-confirm-preview')?.textContent.includes('- Notes')) throw new Error('No preview of the list');
     button.click();
     await done;
     return JSON.stringify(true);
   `);
-  assert.equal(await readFile(join(vault.path, 'sortspec.md'), 'utf8'), '- Default\n- Notes\n  - Beta\n  - ...\n\n说明。\n');
+  assert.equal(await readFile(join(vault.path, 'Collation.md'), 'utf8'), '- Default\n- Notes\n  - Beta\n  - ...\n\n说明。\n');
+  assert.equal(existsSync(join(vault.path, 'sortspec.md')), false, 'the former note was renamed');
   assert.deepEqual(await shown('Notes', ['Beta.md', 'Alpha.md', 'Zeta.md']), ['Beta.md', 'Alpha.md', 'Zeta.md']);
-  assert.deepEqual(await shown('/', ['Default', 'Notes', 'sortspec.md']), ['Default', 'Notes', 'sortspec.md']);
+  assert.deepEqual(await shown('/', ['Default', 'Notes', 'Collation.md']), ['Default', 'Notes', 'Collation.md']);
   report.scenarios.push('front-matter-rules-converted-after-preview');
 
-  // The standalone plug-in reads front-matter rules; the note holds both, so each plug-in finds its own.
-  await evaluate(`await app.vault.modify(app.vault.getAbstractFileByPath('sortspec.md'), ${JSON.stringify('---\nsorting-spec: |-\n  target-folder: Notes\n  Zeta\n  Alpha\n  Beta\n---\n- Notes\n  - Zeta\n  - Alpha\n  - Beta\n')});return JSON.stringify(true);`);
+  // The standalone plug-in reads front-matter rules from sortspec.md, Tabularium its list in Collation.md: same order.
+  await evaluate(`await app.vault.create('sortspec.md', ${JSON.stringify('---\nsorting-spec: |-\n  target-folder: Notes\n  Zeta\n  Alpha\n  Beta\n---\n')});await app.vault.modify(app.vault.getAbstractFileByPath('Collation.md'), ${JSON.stringify('- Notes\n  - Zeta\n  - Alpha\n  - Beta\n')});return JSON.stringify(true);`);
   const standaloneDir = join(vault.path, '.obsidian/plugins/custom-sort');
   await mkdir(standaloneDir, { recursive: true });
   for (const file of ['main.js', 'manifest.json', 'styles.css']) await copyFile(join(standalone, file), join(standaloneDir, file));

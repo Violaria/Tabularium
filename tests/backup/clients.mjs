@@ -17,10 +17,10 @@ const BACKUP = join(root, 'deploy/backup/cli.ts');
 const cliPath = join(root, 'apps/obsidian/src/apps/cli/dist/index.cjs');
 const legacyPath = join(root, '.test-runs/legacy/src/apps/cli/dist/index.cjs');
 const app = join(root, 'apps/obsidian');
-const binaryRoot = join(app, '_testdata/obsidian-1.12.7/squashfs-root');
+const binaryRoot = join(app, '_testdata/obsidian-1.14.5/squashfs-root');
 const passphrase = randomBytes(24).toString('hex');
 const secrets = [passphrase];
-const report = { runId, node: process.version, commonlib: '0.2.1', legacyCommonlib: '0.2.0', obsidian: '1.12.7', command: 'npm run test:backup:clients', scenarios: [] };
+const report = { runId, node: process.version, commonlib: '0.2.1', legacyCommonlib: '0.2.0', obsidian: '1.14.5', command: 'npm run test:backup:clients', scenarios: [] };
 const projects = [];
 let serverImage;
 
