@@ -119,8 +119,12 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     const imported = (await api(`/tabularius/vaults/${vault.id}/prompt/import`, 'POST', {})).prompt;
     assert.match(imported, /本库的规范/);
     await api(`/tabularius/vaults/${vault.id}/prompt`, 'PUT', { prompt: imported });
+    // The server's default prompt starts empty; the administrator writes one (or fills in the template).
+    assert.equal((await api(`/tabularius/vaults/${vault.id}/prompt`)).server, '');
+    assert.match((await api('/tabularius/settings')).promptTemplate, /You are Tabularius/);
+    await api('/tabularius/settings', 'PUT', { prompt: '服务器的默认提示词。' });
     const preview = await api(`/tabularius/vaults/${vault.id}/prompt`);
-    assert(preview.full.startsWith(preview.server.trim()) && preview.full.indexOf(preview.fixed) > preview.server.trim().length && preview.full.endsWith('本库的规范：回答用中文。'), 'server prompt, fixed part, vault prompt in order');
+    assert(preview.full.startsWith('服务器的默认提示词。') && preview.full.indexOf(preview.fixed) > preview.server.trim().length && preview.full.endsWith('本库的规范：回答用中文。'), 'server prompt, fixed part, vault prompt in order');
 
     // Chat in the browser: a streamed answer citing the note, with a link to web notes.
     browser = await chromium.launch({ headless: true });
