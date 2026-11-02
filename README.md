@@ -2,9 +2,9 @@
 
 English · [中文](README.zh-CN.md) · [Lingua Latīna](README.la.md)
 
-Tabularium is a self-hosted server that synchronises note vaults with end-to-end encryption, together with the Obsidian plug-in and the web notes client that connect to it. Notes are encrypted on each device before they are uploaded; the server stores them in CouchDB and cannot read them. Registration is closed: an administrator creates the accounts.
+Tabularium is a self-hosted server that synchronises note vaults with end-to-end encryption, together with the Obsidian plug-in and the web console that connect to it. Notes are encrypted on each device before they are uploaded; the server stores them in CouchDB and cannot read them. Registration is closed: an administrator creates the accounts.
 
-Web notes lets you read and edit notes in the browser and share them on the public internet in several forms (public or with a password, through a link that expires or one that does not), and you can send your notes to your Kindle. Sharing and sending to Kindle are also available in the Obsidian plug-in.
+The web pages also include web notes, which let you read and edit notes in the browser and share them on the public internet in several forms (viewable by anyone or only with a password, through a link that expires or one that does not), and you can send your notes to your Kindle. Sharing notes on the internet and sending them to Kindle are also available in the Obsidian plug-in.
 
 Besides synchronisation, the server's web pages provide server administration, scheduled backups, and Tabularius, an AI administrator (the vault's clerk) that a vault owner can enable for one vault at a time. It works with several APIs (OpenAI, Anthropic, Google Gemini, DeepSeek) and with inference engines for locally deployed models (vLLM, Ollama). You can also give the clerk RAG retrieval, if you run a RAGFlow server.
 
