@@ -38,11 +38,12 @@ async function api(path: string, method = 'GET', body?: unknown, token?: string)
 }
 const evaluate = <T>(session: ObsidianSession, code: string) => evalObsidianJson<T>(obsidianCli, `(async()=>{${code}})()`, session.cliEnv);
 /** What the plug-in keeps on the device: its local database, IndexedDB databases and localStorage keys. */
-const deviceState = (session: ObsidianSession) => evaluate<{ database: string; databases: string[]; keys: string[]; ready: boolean; pending: string }>(session, [
+const deviceState = (session: ObsidianSession) => evaluate<{ database: string; databases: string[]; keys: string[]; vaultKeys: string[]; ready: boolean; pending: string }>(session, [
   "const c=app.plugins.plugins['tabularium'].core;",
   "const pending=c.services.setting.config?await c.services.setting.config.getValue('namespace-migration',''):'';",
   "return JSON.stringify({database:c.localDatabase.localDatabase.name,databases:(await indexedDB.databases()).map(d=>d.name),",
-  "keys:Object.keys(localStorage),ready:c.services.appLifecycle.isReady(),pending});",
+  "keys:Object.keys(localStorage),vaultKeys:Object.keys(localStorage).filter(k=>k.startsWith(app.appId+'-')).map(k=>k.slice(app.appId.length+1)),",
+  "ready:c.services.appLifecycle.isReady(),pending});",
 ].join(''));
 
 /** One device: set up with 0.25.0, closed, changed on both sides, then started with this build. */
@@ -137,7 +138,7 @@ async function upgrade(name: string, withUpstream: boolean) {
     const oldNames = [before.database, `${vault.name}-${appId}-livesync-kv`];
     const present = (name: string) => after.databases.some((database) => database === name || database === `_pouch_${name}`);
     const oldDeviceName = `obsidian-live-sync-vaultanddevicename-${vault.name}-${appId}`;
-    assert(after.keys.includes('tabularium:ls-setting-passphrase'));
+    assert(after.vaultKeys.includes('tabularium:ls-setting-passphrase'));
     if (withUpstream) {
       for (const old of oldNames) assert(present(old), `${old} kept for the original plug-in: ${after.databases.join(', ')}`);
       assert(after.keys.includes(oldDeviceName));
@@ -189,8 +190,8 @@ async function rename026() {
     assert.equal(after.pending, '');
     for (const old of [`_pouch_${vault.name}-tabularium-livesync-v2`, `${vault.name}-tabularium-livesync-kv`])
       assert(!after.databases.includes(old), `${old} removed: ${after.databases.join(', ')}`);
-    assert(after.keys.includes(`tabularium:device-name-${vault.name}-tabularium`), 'the device name moved');
-    assert(!after.keys.some((key) => key.includes('obsidian-live-sync-vaultanddevicename')));
+    assert(after.vaultKeys.includes(`tabularium:device-name-${vault.name}-tabularium`), 'the device name moved');
+    assert(!after.vaultKeys.some((key) => key.includes('obsidian-live-sync-vaultanddevicename')));
     const moved = await evaluate<number>(session, "return JSON.stringify((await app.plugins.plugins['tabularium'].core.localDatabase.localDatabase.info()).doc_count);");
     assert(moved >= documents, `documents moved: ${moved} of ${documents}`);
     assert.equal(await evaluate<boolean>(session, "return JSON.stringify(await app.vault.adapter.exists('tabularium-fetch.md'));"), false, 'nothing is fetched again');

@@ -110,9 +110,10 @@ try {
   step('the two plug-ins use different local databases and Tabularium keeps its device values to itself');
   const tabularium = await readiness(session, 'tabularium'), livesync = await readiness(session, 'obsidian-livesync');
   assert.notEqual(tabularium.database, livesync.database, `local databases: ${tabularium.database} / ${livesync.database}`);
-  const keys = await evaluate<string[]>(session, 'return JSON.stringify(Object.keys(localStorage));');
-  assert(keys.includes('tabularium:ls-setting-passphrase') && !keys.includes('ls-setting-passphrase'),
-    `Tabularium's settings key outside its prefix: ${keys.filter(k => !k.startsWith('tabularium:')).join(', ')}`);
+  // Tabularium's device values are in the vault's own storage (Obsidian prefixes them with the vault's id).
+  const values = await evaluate<{ shared: string[]; vault: string[] }>(session, "const own=app.appId+'-';const all=Object.keys(localStorage);return JSON.stringify({shared:all.filter(k=>!k.startsWith(own)),vault:all.filter(k=>k.startsWith(own)).map(k=>k.slice(own.length))});");
+  assert(values.vault.includes('tabularium:ls-setting-passphrase'), `Tabularium's passphrase key in the vault's storage: ${values.vault.join(', ')}`);
+  assert(!values.shared.includes('tabularium:ls-setting-passphrase'), `the passphrase key in the shared storage: ${values.shared.join(', ')}`);
   assert.equal(tabularium.database, `${vault.name}-tabularium-localdb`);
 
   step('a note written through each server reaches the vault, and the vault note reaches both servers');
