@@ -1,11 +1,17 @@
 // Stand-ins for the Anthropic Messages API (with server-side web search), the OpenAI Responses API, vLLM's Chat Completions,
-// OpenAI-shaped embeddings, the model lists of all four, RAGFlow's MCP server, SearXNG and one web page, enough for the
-// official SDKs. vLLM and the embedding service are reached under /vllm/v1 and /embedding/v1, so their model lists differ.
+// TensorRT-LLM's, OpenAI-shaped embeddings, the model lists of all five, RAGFlow's MCP server, SearXNG and one web page,
+// enough for the official SDKs. vLLM, TensorRT-LLM and the embedding service are reached under /vllm/v1, /tensorrt/v1 and
+// /embedding/v1, so their model lists differ.
 // The model is scripted: search for the user's question, read the first note found, then answer citing it with a quote;
 // "PROPOSE <json>", "KB <question>", "WEB <question>", "WEBLEAK <question>" and the others run other scripts (see plan()).
 // Every request body is kept so tests can check what would have left the server.
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { PARAMS } from '../../apps/server/dist/tabularius/params.js';
+
+// TensorRT-LLM answers 400 to a field it does not know: the request fields of a chat and its parameter table's fields.
+const TENSORRT_FIELDS = new Set(['model', 'messages', 'stream', 'tools', 'tool_choice',
+  ...Object.entries(PARAMS.tensorrt).map(([name, rule]) => (rule.at || name).split('.')[0])]);
 
 const lastUserText = messages => {
   for (const message of [...messages].reverse()) {
@@ -58,7 +64,7 @@ function plan(results, question, final = false) {
 }
 
 export async function startMockProviders() {
-  const requests = { anthropic: [], openai: [], vllm: [], embeddings: [], models: [], mcp: [], searxng: [], page: [] };
+  const requests = { anthropic: [], openai: [], vllm: [], tensorrt: [], embeddings: [], models: [], mcp: [], searxng: [], page: [] };
   const sessions = new Set();
   let sessionCount = 0;
   const knowledge = [];
@@ -68,7 +74,7 @@ export async function startMockProviders() {
     const raw = Buffer.concat(chunks).toString();
     const body = raw ? JSON.parse(raw) : {};
     let path = req.url.split('?')[0];
-    const service = /^\/(vllm|embedding)(?=\/)/.exec(path)?.[1];
+    const service = /^\/(vllm|tensorrt|embedding)(?=\/)/.exec(path)?.[1];
     if (service) path = path.slice(service.length + 1);
     if (path === '/v1/models') {
       // What settings.ts reads: Anthropic's display names, OpenAI's identifiers (chat models among others), vLLM's context lengths.
@@ -79,7 +85,7 @@ export async function startMockProviders() {
       res.end(JSON.stringify(from === 'anthropic'
         ? { data: [{ type: 'model', id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', created_at: '2026-01-01T00:00:00Z' }], has_more: false, first_id: 'claude-opus-5-5', last_id: 'claude-opus-5-5' }
         : { object: 'list', data: from === 'openai' ? [model('gpt-test'), model('text-embedding-3-small')]
-          : from === 'vllm' ? [model('esmeralda', { max_model_len: 6000 })] : [model('test-embed'), model('test-embed-2')] }));
+          : from === 'vllm' ? [model('esmeralda', { max_model_len: 6000 })] : from === 'tensorrt' ? [model('topaz')] : [model('test-embed'), model('test-embed-2')] }));
       return;
     }
     if (path === '/v1/messages') {
@@ -189,7 +195,14 @@ export async function startMockProviders() {
       return;
     }
     if (path === '/v1/chat/completions') {
-      requests.vllm.push({ headers: req.headers, body, raw });
+      const who = service === 'tensorrt' ? 'tensorrt' : 'vllm';
+      requests[who].push({ headers: req.headers, body, raw });
+      const unknown = who === 'tensorrt' ? Object.keys(body).filter(field => !TENSORRT_FIELDS.has(field)) : [];
+      if (unknown.length) {
+        res.writeHead(400, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ object: 'error', message: `Extra inputs are not permitted: ${unknown.join(', ')}`, type: 'BadRequestError', code: 400 }));
+        return;
+      }
       const results = [];
       // The final round's instruction to answer is not one of the user's questions.
       const messages = body.tool_choice === 'none' ? body.messages.slice(0, -1) : body.messages;
@@ -198,11 +211,11 @@ export async function startMockProviders() {
         results.unshift(message.content);
       }
       const step = plan(results, lastUserText(messages), body.tool_choice === 'none');
-      const n = requests.vllm.length;
+      const n = requests[who].length;
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       const chunk = (delta, finish = null) => res.write(`data: ${JSON.stringify({ id: `c${n}`, object: 'chat.completion.chunk', created: 0, model: body.model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
-      // vLLM's reasoning parser streams the thinking as delta.reasoning.
-      chunk({ role: 'assistant', reasoning: `thinking-${n}` });
+      // vLLM's reasoning parser streams the thinking as delta.reasoning, TensorRT-LLM's as delta.reasoning_content.
+      chunk({ role: 'assistant', [who === 'tensorrt' ? 'reasoning_content' : 'reasoning']: `thinking-${n}` });
       if (step.tool) {
         const args = JSON.stringify(step.input);
         chunk({ tool_calls: [{ index: 0, id: `call_${n}`, type: 'function', function: { name: step.tool, arguments: args.slice(0, 5) } }] });

@@ -53,7 +53,8 @@ test('Tabularius', { timeout: 900_000 }, async () => {
   // changes go through the settings API. The default model becomes the default recipe.
   const initial = {
     providers: { anthropic: { key: 'test-anthropic', models: ['claude-opus-5-5'] }, openai: { key: 'test-openai', models: ['gpt-test'] },
-      vllm: { url: `${mock.url}/vllm/v1`, models: ['esmeralda'], context: 6000 } },
+      vllm: { url: `${mock.url}/vllm/v1`, models: ['esmeralda'], context: 6000 },
+      tensorrt: { url: `${mock.url}/tensorrt/v1`, models: ['topaz'], context: 32_768 } },
     defaultModel: 'anthropic/claude-opus-5-5', knowledge: { url: `${mock.url}/mcp`, datasets: ['ds-ops', 'ds-notes'] },
     embedding: { url: `${mock.url}/embedding/v1`, key: 'test-embed-key', model: 'test-embed', batch: 4 },
     web: { enabled: true, searxng: mock.url, allowed: [], blocked: [], maxUses: 3, intranet: ['127.0.0.1'] },
@@ -233,7 +234,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     await settingsDialog.getByRole('button', { name: '取消' }).click();
     // LLM settings for administrators: providers with the models their APIs list, keys shown by their last four characters, then recipes.
     await page.goto(`${url}/admin/ai`);
-    await expect(page.locator('details.llm-provider')).toHaveCount(3);
+    await expect(page.locator('details.llm-provider')).toHaveCount(4);
     await expect(page.locator('details.llm-provider[data-provider="anthropic"] input[name="key"]')).toHaveAttribute('placeholder', /opic/);
     // The list from the provider's API comes on request: open the provider and fetch it.
     const anthropicItem = page.locator('details.llm-provider[data-provider="anthropic"]');
@@ -459,9 +460,10 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     // The vLLM recipe gets its full parameters, and an OpenAI recipe joins; the conversation adjusts Claude's effort.
     const recipes = (await api('/tabularius/settings', 'PUT', { recipes: [
       ...(await api('/tabularius/settings')).recipes.map(recipe => recipe.id === esmeralda.id ? { ...recipe, params: { temperature: 0.3, enable_thinking: false, min_tokens: 2 } } : recipe),
-      { name: 'GPT 测试', model: 'openai/gpt-test', params: {}, prompt: '' }] })).recipes;
+      { name: 'GPT 测试', model: 'openai/gpt-test', params: {}, prompt: '' },
+      { name: 'TensorRT 测试', model: 'tensorrt/topaz', params: { top_k: 40, enable_thinking: true, stop_token_ids: [7, 8] }, prompt: '' }] })).recipes;
     const recipeId = name => recipes.find(recipe => recipe.name === name).id;
-    assert.deepEqual(recipes.map(recipe => recipe.name), ['Claude Opus 5 5', '运维 vLLM', 'GPT 测试']);
+    assert.deepEqual(recipes.map(recipe => recipe.name), ['Claude Opus 5 5', '运维 vLLM', 'GPT 测试', 'TensorRT 测试']);
     assert.deepEqual((await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { params: { anthropic: { effort: 'high' } } })).params, { anthropic: { effort: 'high' } });
 
     // The web with Claude: server-side search, a paused turn continued unchanged, cited sources and an activity record.
@@ -673,6 +675,14 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.equal((await ask('LOOP 紫藤')).answer, '搜索了 8 次');
     assert.deepEqual(mock.requests.vllm.slice(vllmBefore).map(r => r.body.tool_choice ?? 'auto'), [...Array(8).fill('auto'), 'none']);
     assert.deepEqual(mock.requests.vllm.at(-1).body.messages.at(-1), { role: 'user', content: 'The tool limit for this answer is reached. Answer now with what you have found, without calling tools.' });
+    // TensorRT-LLM: only the fields of its table (it rejects others), and its thinking goes back as reasoning_content.
+    await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { recipe: recipeId('TensorRT 测试') });
+    assert.match((await ask('KB 银杏')).answer, /备用说明/);
+    const trtLast = mock.requests.tensorrt.at(-1).body;
+    assert.deepEqual([trtLast.top_k, trtLast.chat_template_kwargs, trtLast.stop_token_ids], [40, { enable_thinking: true }, [7, 8]]);
+    assert(trtLast.messages.some(m => m.role === 'assistant' && m.reasoning_content?.startsWith('thinking-')), 'thinking is replayed to TensorRT-LLM');
+    assert.match(trtLast.messages[0].content, /served by a local TensorRT-LLM server\./);
+    await api(`/tabularius/conversations/${conversation.id}`, 'PATCH', { recipe: recipeId('运维 vLLM') });
     // A URL the conversation never showed is refused, so note content cannot be smuggled out in a query string.
     assert.match((await ask('WEBLEAK 版本')).answer, /only URLs that appeared in the conversation/);
     assert.equal(mock.requests.page.length, 1);
@@ -712,6 +722,7 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.deepEqual(await api('/tabularius/settings/models/anthropic'), [{ id: 'claude-opus-5-5', name: 'Claude Opus 5.5' }]);
     assert.deepEqual(await api('/tabularius/settings/models/openai'), [{ id: 'gpt-test', name: 'GPT Test' }], 'models that do not chat are left out');
     assert.deepEqual(await api('/tabularius/settings/models/vllm'), [{ id: 'esmeralda', name: 'esmeralda', context: 6000 }]);
+    assert.deepEqual(await api('/tabularius/settings/models/tensorrt'), [{ id: 'topaz', name: 'topaz' }]);
     assert.equal((await call('/tabularius/settings/models/none')).status, 404);
     assert.equal(mock.requests.models.findLast(r => r.service === 'openai').headers.authorization, 'Bearer test-openai');
     await api('/tabularius/settings', 'PUT', { providers: { openai: { key: 'replaced-openai-key' } }, defaultRecipe: recipeId('GPT 测试') });
