@@ -158,6 +158,21 @@ try {
   assert.ok(language.includes('同步') && language.includes('维护'), JSON.stringify(language));
   report.scenarios.push('language-change-renames-pages');
 
+  // A plug-in folder copied from another vault: its connection is cleared before anything synchronises.
+  const copied = await evaluate<{ file: boolean; uri: string; notice: boolean }>(`
+    const plugin=app.plugins.plugins['tabularium'];
+    await plugin.core.services.setting.applyPartial({couchDB_URI:'http://127.0.0.1:9/sync',couchDB_DBNAME:'other',couchDB_USER:'u',couchDB_PASSWORD:'p',isConfigured:true},true);
+    const file=plugin.manifest.dir+'/tabularium.json';
+    await app.vault.adapter.write(file, JSON.stringify({server:'http://127.0.0.1:9',vaultId:'other',vaultName:'Other',deviceId:'d',deviceName:'D',expiresAt:Date.now()+86400000,appId:'another-vault'}));
+    await app.plugins.disablePlugin('tabularium');
+    await app.plugins.enablePlugin('tabularium');
+    await wait(()=>app.setting.pluginTabs.some(tab=>tab.id==='tabularium'),'the plug-in to load again',30000);
+    const notice=Boolean(await wait(()=>[...document.querySelectorAll('.notice')].some(n=>n.textContent.includes('Connection belonged to another vault')),'the notice').catch(()=>false));
+    return JSON.stringify({file:await app.vault.adapter.exists(file),uri:app.plugins.plugins['tabularium'].core.services.setting.currentSettings().couchDB_URI,notice});
+  `);
+  assert.deepEqual(copied, { file: false, uri: '', notice: true });
+  report.scenarios.push('connection-copied-from-another-vault-is-cleared');
+
   report.status = 'passed';
   console.log(`PASS ${report.scenarios.length} real Obsidian settings scenarios`);
 } catch (error) {
