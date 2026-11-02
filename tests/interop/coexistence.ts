@@ -113,7 +113,7 @@ try {
   const keys = await evaluate<string[]>(session, 'return JSON.stringify(Object.keys(localStorage));');
   assert(keys.includes('tabularium:ls-setting-passphrase') && !keys.includes('ls-setting-passphrase'),
     `Tabularium's settings key outside its prefix: ${keys.filter(k => !k.startsWith('tabularium:')).join(', ')}`);
-  assert.equal(tabularium.database, `${vault.name}-tabularium-livesync-v2`);
+  assert.equal(tabularium.database, `${vault.name}-tabularium-v2`);
 
   step('a note written through each server reaches the vault, and the vault note reaches both servers');
   await viaTabularium.write('notes/经 Tabularium.md', '# 经 Tabularium\n');
