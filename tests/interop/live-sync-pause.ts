@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createTemporaryVault, type TemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
+import { startObsidianSession, type ObsidianSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 import { connectTabularium, startTabularium, until } from './obsidian-runtime.ts';
 
@@ -29,14 +29,14 @@ async function api(path: string, method = 'GET', body?: unknown, token?: string)
   assert(response.ok, `${method} ${path}: ${response.status}`);
   return response.json();
 }
-const evaluate = <T>(session: ObsidianLiveSyncSession, code: string) => evalObsidianJson<T>(obsidianCli, `(async()=>{${code}})()`, session.cliEnv);
-const state = (session: ObsidianLiveSyncSession) => evaluate<{ paused: boolean; liveSync: boolean; syncOnSave: boolean }>(session,
+const evaluate = <T>(session: ObsidianSession, code: string) => evalObsidianJson<T>(obsidianCli, `(async()=>{${code}})()`, session.cliEnv);
+const state = (session: ObsidianSession) => evaluate<{ paused: boolean; liveSync: boolean; syncOnSave: boolean }>(session,
   "const p=app.plugins.plugins['tabularium'];const s=p.core.services.setting.currentSettings();return JSON.stringify({paused:p.livePause.paused,liveSync:s.liveSync,syncOnSave:s.syncOnSave});");
 /** Runs a command the way the palette does; false when it is not available right now. */
-const command = (session: ObsidianLiveSyncSession, id: string) => evaluate<boolean>(session,
+const command = (session: ObsidianSession, id: string) => evaluate<boolean>(session,
   `const c=app.commands.findCommand('tabularium:${id}');return JSON.stringify(Boolean(c&&c.checkCallback(true)&&(c.checkCallback(false),true)));`);
 
-let session: ObsidianLiveSyncSession | undefined;
+let session: ObsidianSession | undefined;
 let vault: TemporaryVault | undefined;
 try {
   step('a device signs in; live sync is on');
@@ -80,7 +80,7 @@ try {
   await edit('notes/重启前.md', '# 重启前\n');
   await settle();
   await session.app.stop(); session = undefined;
-  session = await startObsidianLiveSyncSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault });
+  session = await startObsidianSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault });
   await until(() => evaluate<boolean>(session!, "return JSON.stringify(Boolean(app.plugins.plugins['tabularium']?.core?.services.appLifecycle.isReady()));"));
   assert.deepEqual(await state(session), { paused: true, liveSync: false, syncOnSave: false });
   assert.equal(await command(session, 'pause-live-sync'), false, 'pause is not offered while paused');

@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createTemporaryVault, type TemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import type { ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
+import type { ObsidianSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 import { connectTabularium, startTabularium, until } from './obsidian-runtime.ts';
 
@@ -33,12 +33,12 @@ async function api(path: string, method = 'GET', body?: unknown, token?: string)
   return response.json();
 }
 const start = (vault: TemporaryVault) => startTabularium(vault, obsidianCli);
-const connect = (session: ObsidianLiveSyncSession, options: Record<string, unknown>) => connectTabularium(session, obsidianCli, { server, username, ...options });
+const connect = (session: ObsidianSession, options: Record<string, unknown>) => connectTabularium(session, obsidianCli, { server, username, ...options });
 async function read(path: string) {
   return new Uint8Array(await readFile(path));
 }
 
-let session: ObsidianLiveSyncSession | undefined;
+let session: ObsidianSession | undefined;
 const vaults: TemporaryVault[] = [];
 try {
   step('device A uploads a new vault after the first login');

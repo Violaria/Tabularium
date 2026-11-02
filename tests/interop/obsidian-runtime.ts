@@ -2,8 +2,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { TemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
-import { createE2eObsidianDeviceLocalState, waitForLiveSyncCoreReady } from '../../apps/obsidian/test/e2e-obsidian/runner/liveSyncWorkflow.ts';
+import { startObsidianSession, type ObsidianSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
+import { createE2eObsidianDeviceLocalState, waitForCoreReady } from '../../apps/obsidian/test/e2e-obsidian/runner/syncWorkflow.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 
 /** Keeps the pinned Obsidian runtime: without this the app downloads and loads a newer build into the temporary profile. */
@@ -28,7 +28,7 @@ export async function until<T>(check: () => Promise<T | undefined | false>, time
 /** Starts Obsidian with the plug-in; `pluginData` is written to its data.json first (settings left by an earlier start). */
 export async function startTabularium(vault: TemporaryVault, obsidianCli: string, pluginData: Record<string, unknown> = {}) {
   await pinObsidianRuntime(vault);
-  const session = await startObsidianLiveSyncSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault, pluginData, localStorageEntries: createE2eObsidianDeviceLocalState(vault.name) });
+  const session = await startObsidianSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault, pluginData, localStorageEntries: createE2eObsidianDeviceLocalState(vault.name) });
   await until(() => evalObsidianJson<boolean>(obsidianCli, "(async()=>JSON.stringify(Boolean(app.plugins.plugins['tabularium']?.tabularium)))()", session.cliEnv));
   return session;
 }
@@ -41,16 +41,16 @@ const confirmations = ['Overwrite all with remote files', 'Keep local files even
  * left on the old page tells it apart from the reloaded one, since a device that was already configured reports ready
  * before the reload. `buttons` adds answers for dialogues a particular start is expected to show.
  */
-export async function connectTabularium(session: ObsidianLiveSyncSession, obsidianCli: string, options: Record<string, unknown>, buttons: string[] = []) {
+export async function connectTabularium(session: ObsidianSession, obsidianCli: string, options: Record<string, unknown>, buttons: string[] = []) {
   await evalObsidianJson(obsidianCli, `(async()=>{window.__tabulariumConnecting=true;window.__tabulariumLogin=app.plugins.plugins['tabularium'].tabularium.connect(${JSON.stringify(options)}).then(()=>'done',e=>'error: '+e.message);return JSON.stringify(true);})()`, session.cliEnv);
   await until(async () => {
     await evalObsidianJson(obsidianCli, `(async()=>{for(const b of document.querySelectorAll('.modal button'))if(${JSON.stringify([...confirmations, ...buttons])}.includes(b.textContent?.trim()))b.click();return JSON.stringify(true);})()`, session.cliEnv);
     if (await evalObsidianJson<boolean>(obsidianCli, "(async()=>JSON.stringify(Boolean(window.__tabulariumConnecting)))()", session.cliEnv).catch(() => true)) return false;
-    return (await waitForLiveSyncCoreReady(obsidianCli, session.cliEnv, 5000)).appReady;
+    return (await waitForCoreReady(obsidianCli, session.cliEnv, 5000)).appReady;
   }, 120_000).catch(async (error) => {
     // Shows what the app is waiting for: open dialogues and their buttons.
     const dialogues = await evalObsidianJson(obsidianCli, "(async()=>JSON.stringify([...document.querySelectorAll('.modal')].map(m=>({title:m.querySelector('.modal-title')?.textContent,text:m.textContent?.slice(0,600),buttons:[...m.querySelectorAll('button')].map(b=>b.outerHTML.slice(0,300))}))))()", session.cliEnv).catch(String);
     throw new Error(`${(error as Error).message}\nOpen dialogues: ${JSON.stringify(dialogues)}`);
   });
 }
-export type { ObsidianLiveSyncSession, TemporaryVault };
+export type { ObsidianSession, TemporaryVault };

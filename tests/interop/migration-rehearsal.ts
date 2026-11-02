@@ -8,7 +8,7 @@ import { join, relative, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createTemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import { connectTabularium, startTabularium, until, type ObsidianLiveSyncSession, type TemporaryVault } from './obsidian-runtime.ts';
+import { connectTabularium, startTabularium, until, type ObsidianSession, type TemporaryVault } from './obsidian-runtime.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 
 const exec = promisify(execFile);
@@ -48,7 +48,7 @@ async function api(path: string, method = 'GET', body?: unknown, token?: string)
   return response.json();
 }
 
-let session: ObsidianLiveSyncSession | undefined;
+let session: ObsidianSession | undefined;
 const vaults: TemporaryVault[] = [];
 try {
   const expected = await hashes(source);

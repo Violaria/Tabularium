@@ -5,9 +5,9 @@ import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createTemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
+import { startObsidianSession, type ObsidianSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { loadCouchDbConfig, createCouchDbDatabase, deleteCouchDbDatabase } from '../../apps/obsidian/test/e2e-obsidian/runner/couchdb.ts';
-import { createE2eCouchDbPluginData, createE2eObsidianDeviceLocalState, waitForLiveSyncCoreReady, prepareRemote, pushLocalChanges } from '../../apps/obsidian/test/e2e-obsidian/runner/liveSyncWorkflow.ts';
+import { createE2eCouchDbPluginData, createE2eObsidianDeviceLocalState, waitForCoreReady, prepareRemote, pushLocalChanges } from '../../apps/obsidian/test/e2e-obsidian/runner/syncWorkflow.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 import { pinObsidianRuntime } from './obsidian-runtime.ts';
 
@@ -30,7 +30,7 @@ const pluginData = createE2eCouchDbPluginData({ ...config, dbName }, {
   encrypt: true, passphrase: process.env.BASELINE_PASSPHRASE ?? randomBytes(24).toString('hex'), usePathObfuscation: true,
   encryptInternalMetadata: true, E2EEAlgorithm: 'v2', useRequestAPI: false,
 });
-let session: ObsidianLiveSyncSession | undefined;
+let session: ObsidianSession | undefined;
 try {
   if (!provisioned) await createCouchDbDatabase(config, dbName);
   await mkdir(database);
@@ -49,11 +49,11 @@ try {
   }
   if (stage === 'seed') console.log('Seeded remote.');
   else {
-    session = await startObsidianLiveSyncSession({
+    session = await startObsidianSession({
       binary: process.env.OBSIDIAN_BINARY!, cliBinary: process.env.OBSIDIAN_CLI!, vault,
       pluginData, localStorageEntries: createE2eObsidianDeviceLocalState(vault.name),
     });
-    await waitForLiveSyncCoreReady(process.env.OBSIDIAN_CLI!, session.cliEnv);
+    await waitForCoreReady(process.env.OBSIDIAN_CLI!, session.cliEnv);
     if (standard) {
       await prepareRemote(process.env.OBSIDIAN_CLI!, session.cliEnv);
       await pushLocalChanges(process.env.OBSIDIAN_CLI!, session.cliEnv);

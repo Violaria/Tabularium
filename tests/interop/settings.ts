@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { createTemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
+import { startObsidianSession, type ObsidianSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 import { compareLifecycle, DUMP_LIFECYCLE } from './lifecycleOrder.ts';
 
@@ -17,7 +17,7 @@ const binaryRoot = resolve('_testdata/obsidian-1.14.5/squashfs-root');
 const binary = join(binaryRoot, 'obsidian');
 const cli = join(binaryRoot, 'obsidian-cli');
 const vault = await createTemporaryVault('tabularium-settings-');
-let session: ObsidianLiveSyncSession | undefined;
+let session: ObsidianSession | undefined;
 const report: { runId: string; obsidian: string; scenarios: string[]; status?: string; error?: string } = { runId, obsidian: '1.14.5', scenarios: [] };
 
 /** Helpers evaluated in Obsidian before each step: waiting, the settings dialogue and its visible rows. */
@@ -33,7 +33,7 @@ const helpers = `
 `;
 
 try {
-  session = await startObsidianLiveSyncSession({ binary, cliBinary: cli, vault,
+  session = await startObsidianSession({ binary, cliBinary: cli, vault,
     pluginData: { isConfigured: false, couchDB_DBNAME: 'settings-page' },
   });
   const evaluate = <T>(code: string) => evalObsidianJson<T>(cli, `(async()=>{${helpers}${code}})()`, session!.cliEnv, 45_000);

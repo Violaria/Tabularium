@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createTemporaryVault, type TemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
+import { startObsidianSession, type ObsidianSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 import { connectTabularium, pinObsidianRuntime, until } from './obsidian-runtime.ts';
 
@@ -34,9 +34,9 @@ async function api(path: string, method = 'GET', body?: unknown, token?: string)
   assert(response.ok, `${method} ${path}: ${response.status}`);
   return response.json();
 }
-const evaluate = <T>(session: ObsidianLiveSyncSession, code: string) => evalObsidianJson<T>(obsidianCli, `(async()=>{${code}})()`, session.cliEnv);
+const evaluate = <T>(session: ObsidianSession, code: string) => evalObsidianJson<T>(obsidianCli, `(async()=>{${code}})()`, session.cliEnv);
 /** What the plug-in keeps on the device: its local database, IndexedDB databases and localStorage keys. */
-const deviceState = (session: ObsidianLiveSyncSession) => evaluate<{ database: string; databases: string[]; keys: string[]; ready: boolean; pending: string }>(session, [
+const deviceState = (session: ObsidianSession) => evaluate<{ database: string; databases: string[]; keys: string[]; ready: boolean; pending: string }>(session, [
   "const c=app.plugins.plugins['tabularium'].core;",
   "const pending=c.services.setting.config?await c.services.setting.config.getValue('namespace-migration',''):'';",
   "return JSON.stringify({database:c.localDatabase.localDatabase.name,databases:(await indexedDB.databases()).map(d=>d.name),",
@@ -45,7 +45,7 @@ const deviceState = (session: ObsidianLiveSyncSession) => evaluate<{ database: s
 
 /** One device: set up with 0.25.0, closed, changed on both sides, then started with this build. */
 async function upgrade(name: string, withUpstream: boolean) {
-  let session: ObsidianLiveSyncSession | undefined;
+  let session: ObsidianSession | undefined;
   let vault: TemporaryVault | undefined;
   try {
     step(`${name}: a device signs in with 0.25.0${withUpstream ? '; the original plug-in is installed but not enabled' : ''}`);
@@ -53,7 +53,7 @@ async function upgrade(name: string, withUpstream: boolean) {
     await mkdir(join(vault.path, 'notes'), { recursive: true });
     await writeFile(join(vault.path, 'notes/升级前.md'), '# 升级前\n');
     await pinObsidianRuntime(vault);
-    session = await startObsidianLiveSyncSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault, artifactRoot: released, pluginData: {} });
+    session = await startObsidianSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault, artifactRoot: released, pluginData: {} });
     await until(() => evaluate<boolean>(session!, "return JSON.stringify(Boolean(app.plugins.plugins['tabularium']?.tabularium));"));
     assert.equal(await evaluate<string>(session, "return JSON.stringify(app.plugins.manifests['tabularium'].version);"), '0.25.0');
     await connectTabularium(session, obsidianCli, { server, username, password: signedIn ? password : initialPassword,
@@ -98,7 +98,7 @@ async function upgrade(name: string, withUpstream: boolean) {
     const dataPath = join(vault.path, '.obsidian/plugins/tabularium/data.json');
     await writeFile(dataPath, JSON.stringify({ ...JSON.parse(await readFile(dataPath, 'utf8')), writeLogToTheFile: true }));
     step(`${name}: this build starts, fetches once into its own names and continues`);
-    session = await startObsidianLiveSyncSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault });
+    session = await startObsidianSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault });
     const after = await until(async () => {
       const state = await deviceState(session!).catch(() => undefined);
       return state?.ready && !state.pending ? state : undefined;

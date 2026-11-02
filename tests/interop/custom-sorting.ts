@@ -5,7 +5,7 @@ import { copyFile, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createTemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
+import { startObsidianSession, type ObsidianSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 
 const root = resolve('../..');
@@ -26,10 +26,10 @@ for (const folder of ['Notes', 'Default']) {
 }
 const rules = ['文件的顺序。', '', '- Notes —— 笔记放最前', '  - Zeta', '  - ...', '  - Alpha —— 最后读', '- Default', ''].join('\n');
 await writeFile(join(vault.path, 'Collation.md'), rules);
-let session: ObsidianLiveSyncSession | undefined;
+let session: ObsidianSession | undefined;
 const report: { runId: string; obsidian: string; scenarios: string[]; status?: string; error?: string } = { runId, obsidian: '1.14.5', scenarios: [] };
 try {
-  session = await startObsidianLiveSyncSession({ binary, cliBinary: cli, vault,
+  session = await startObsidianSession({ binary, cliBinary: cli, vault,
     pluginData: { isConfigured: false, couchDB_DBNAME: 'sorting-preserves-sync-config' },
   });
   const evaluate = <T>(code: string) => evalObsidianJson<T>(cli, `(async()=>{${code}})()`, session!.cliEnv, 45_000);

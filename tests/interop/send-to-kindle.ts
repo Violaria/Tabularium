@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createTemporaryVault, type TemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import type { ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
+import type { ObsidianSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 import { parseMessage } from '../../apps/server/test/smtp-sink.mjs';
 import { epubErrors } from '../kindle/epubcheck.ts';
@@ -31,7 +31,7 @@ async function api(path: string, method = 'GET', body?: unknown, token?: string)
   assert(response.ok, `${method} ${path}: ${response.status}`);
   return response.json();
 }
-const plugin = (session: ObsidianLiveSyncSession, body: string) =>
+const plugin = (session: ObsidianSession, body: string) =>
   evalObsidianJson<unknown>(obsidianCli, `(async()=>{const p=app.plugins.plugins['tabularium'];${body}})()`, session.cliEnv);
 const mails = async () => (await readdir(mailDir)).filter((name) => name.endsWith('.eml')).length;
 /** Waits for mail number `n`, checks it and returns the attached book. */
@@ -45,7 +45,7 @@ async function received(n: number, fileName: string) {
   return mail.data as Buffer;
 }
 
-let session: ObsidianLiveSyncSession | undefined;
+let session: ObsidianSession | undefined;
 const vaults: TemporaryVault[] = [];
 try {
   const vault = await createTemporaryVault(); vaults.push(vault);

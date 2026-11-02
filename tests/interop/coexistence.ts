@@ -9,9 +9,9 @@ import { join, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { createTemporaryVault, type TemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
+import { startObsidianSession, type ObsidianSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
-import { createE2eCouchDbPluginData, createE2eObsidianDeviceLocalState } from '../../apps/obsidian/test/e2e-obsidian/runner/liveSyncWorkflow.ts';
+import { createE2eCouchDbPluginData, createE2eObsidianDeviceLocalState } from '../../apps/obsidian/test/e2e-obsidian/runner/syncWorkflow.ts';
 import { connectTabularium, startTabularium, until } from './obsidian-runtime.ts';
 
 const exec = promisify(execFile);
@@ -36,7 +36,7 @@ async function api(path: string, method = 'GET', body?: unknown, token?: string)
   assert(response.ok, `${method} ${path}: ${response.status}`);
   return response.json();
 }
-const evaluate = <T>(session: ObsidianLiveSyncSession, code: string) => evalObsidianJson<T>(obsidianCli, `(async()=>{${code}})()`, session.cliEnv);
+const evaluate = <T>(session: ObsidianSession, code: string) => evalObsidianJson<T>(obsidianCli, `(async()=>{${code}})()`, session.cliEnv);
 
 /** A CLI client on its own database directory, configured against one of the two servers. */
 async function client(name: string, settings: Record<string, unknown>) {
@@ -61,15 +61,15 @@ async function client(name: string, settings: Record<string, unknown>) {
 }
 
 /** Enables the original plug-in in the running vault; Obsidian's plug-in API, since the test session enables only Tabularium. */
-async function enableLiveSync(session: ObsidianLiveSyncSession) {
+async function enableLiveSync(session: ObsidianSession) {
   await evaluate(session, "await app.plugins.loadManifests();await app.plugins.enablePluginAndSave('obsidian-livesync');return JSON.stringify(true);");
   await until(() => evaluate<boolean>(session, "const c=app.plugins.plugins['obsidian-livesync']?.core;return JSON.stringify(Boolean(c&&c.services.database.isDatabaseReady()&&c.services.appLifecycle.isReady()));"));
 }
 
-const readiness = (session: ObsidianLiveSyncSession, id: string) => evaluate<{ ready: boolean; suspended: boolean; database: string }>(session,
+const readiness = (session: ObsidianSession, id: string) => evaluate<{ ready: boolean; suspended: boolean; database: string }>(session,
   `const c=app.plugins.plugins['${id}'].core;return JSON.stringify({ready:c.services.appLifecycle.isReady(),suspended:c.services.appLifecycle.isSuspended(),database:c.localDatabase.localDatabase.name});`);
 
-let session: ObsidianLiveSyncSession | undefined;
+let session: ObsidianSession | undefined;
 let vault: TemporaryVault | undefined;
 try {
   step('Tabularium logs in and uploads a new vault');
@@ -133,7 +133,7 @@ try {
   step("the original plug-in's flag file does not stop Tabularium");
   await writeFile(join(vault.path, 'redflag.md'), '');
   await session.app.stop(); session = undefined;
-  session = await startObsidianLiveSyncSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault });
+  session = await startObsidianSession({ binary: process.env.OBSIDIAN_BINARY!, cliBinary: obsidianCli, vault });
   await until(() => evaluate<boolean>(session!, "return JSON.stringify(Boolean(app.plugins.plugins['tabularium']?.core?.services.appLifecycle.isReady()));"));
   assert.equal((await readiness(session, 'tabularium')).suspended, false, 'Tabularium suspended by redflag.md');
   await viaTabularium.write('notes/重启之后.md', '# 重启之后\n');

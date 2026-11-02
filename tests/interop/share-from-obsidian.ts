@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createTemporaryVault, type TemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
-import type { ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
+import type { ObsidianSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
 import { contentKey, decrypt, fromBase64Url } from '../../apps/obsidian/src/features/tabularium/share/crypto.ts';
 import { connectTabularium, startTabularium, until } from './obsidian-runtime.ts';
@@ -21,10 +21,10 @@ const notes: Record<string, string | Buffer> = {
   'Private.md': 'Private text.\n',
 };
 const step = (name: string) => console.log(`[share-from-obsidian] ${name}`);
-const run = (session: ObsidianLiveSyncSession, body: string) =>
+const run = (session: ObsidianSession, body: string) =>
   evalObsidianJson<unknown>(obsidianCli, `(async()=>{const p=app.plugins.plugins['tabularium'];${body}})()`, session.cliEnv);
 
-let session: ObsidianLiveSyncSession | undefined;
+let session: ObsidianSession | undefined;
 const vaults: TemporaryVault[] = [];
 try {
   const vault = await createTemporaryVault(); vaults.push(vault);
