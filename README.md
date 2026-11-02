@@ -4,7 +4,7 @@ Tabularium is a self-hosted server for synchronising Obsidian vaults with end-to
 
 Besides synchronisation, the server provides a web app: an administration console, a browser client for reading and editing notes (decrypted in the browser), shared note pages, sending notes to a Kindle, scheduled backups, and Tabularius, an optional AI curator that a vault owner can enable for one vault at a time.
 
-Version 0.24.4. The project is in active development and is not yet published under a licence of its own; see Licences below.
+Version 0.24.5. The project is in active development and is not yet published under a licence of its own; see Licences below.
 
 ## Repositories
 
