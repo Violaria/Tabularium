@@ -84,6 +84,47 @@ try {
   assert.deepEqual(await shown('Default', ['Beta.md', 'Alpha.md', 'Zeta.md']), ['Beta.md', 'Alpha.md', 'Zeta.md']);
   report.scenarios.push('edited-rules-apply-at-once');
 
+  // The context menu's "Sorting": move to the top or the bottom (written into Collation.md), show in Collation.md, pause.
+  const edited = rules.replace('- Default', '- Default\n  - Beta');
+  /** Right-clicks an item in the file list and chooses an entry of the Sorting submenu. */
+  const menu = (path: string, entry: string) => evaluate<boolean>(`
+    const wait=async(read,what)=>{const deadline=Date.now()+10000;let value;while(!(value=read())&&Date.now()<deadline) await new Promise(r=>setTimeout(r,100));if(!value) throw new Error('Timed out waiting for '+what);return value;};
+    const view=app.workspace.getLeavesOfType('file-explorer')[0].view;
+    view.revealInFolder(app.vault.getAbstractFileByPath(${JSON.stringify(path)}));
+    const title=await wait(()=>document.querySelector('[data-path=${JSON.stringify(path)}]'),'the item in the file list');
+    title.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));
+    const item=(text)=>[...document.querySelectorAll('.menu .menu-item')].find(el=>el.textContent.trim()===text);
+    const sorting=await wait(()=>item('Sorting'),'Sorting in the menu');
+    sorting.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));
+    sorting.click();
+    (await wait(()=>item(${JSON.stringify(entry)}),${JSON.stringify(entry)})).click();
+    await new Promise(r=>setTimeout(r,500));
+    return JSON.stringify(true);
+  `);
+  await menu('Notes/Beta.md', 'Move to the top');
+  assert.deepEqual(await shown('Notes', ['Beta.md', 'Zeta.md', 'Alpha.md']), ['Beta.md', 'Zeta.md', 'Alpha.md']);
+  assert.match(await readFile(join(vault.path, 'Collation.md'), 'utf8'), /- Notes —— 笔记放最前\n  - Beta\n  - Zeta\n  - \.\.\.\n  - Alpha —— 最后读\n/);
+  await menu('Default/Zeta.md', 'Move to the bottom');
+  assert.deepEqual(await shown('Default', ['Beta.md', 'Alpha.md', 'Zeta.md']), ['Beta.md', 'Alpha.md', 'Zeta.md']);
+  assert.match(await readFile(join(vault.path, 'Collation.md'), 'utf8'), /- Default\n  - Beta\n  - \.\.\.\n  - Zeta\n/);
+  report.scenarios.push('menu-moves-to-top-and-bottom');
+
+  await menu('Notes/Alpha.md', 'Show in Collation.md');
+  const cursor = await evaluate<{ file: string | null; line: string }>(`
+    const editor=app.workspace.activeEditor?.editor;
+    return JSON.stringify({file:app.workspace.getActiveFile()?.path??null,line:editor?editor.getLine(editor.getCursor().line):''});
+  `);
+  assert.deepEqual(cursor, { file: 'Collation.md', line: '  - Alpha —— 最后读' });
+  report.scenarios.push('menu-shows-the-item-in-collation');
+
+  await menu('Notes/Alpha.md', 'Pause sorting');
+  assert.deepEqual(await shown('Notes', ['Alpha.md', 'Beta.md', 'Zeta.md']), ['Alpha.md', 'Beta.md', 'Zeta.md']);
+  await menu('Notes/Alpha.md', 'Apply sorting');
+  assert.deepEqual(await shown('Notes', ['Beta.md', 'Zeta.md', 'Alpha.md']), ['Beta.md', 'Zeta.md', 'Alpha.md']);
+  report.scenarios.push('menu-pauses-and-applies');
+  await evaluate(`await app.vault.modify(app.vault.getAbstractFileByPath('Collation.md'), ${JSON.stringify(edited)});return JSON.stringify(true);`);
+  assert.deepEqual(await shown('Notes', ['Zeta.md', 'Beta.md', 'Alpha.md']), ['Zeta.md', 'Beta.md', 'Alpha.md']);
+
   const settingsPath = join(vault.path, '.obsidian/plugins/tabularium');
   const initialSyncSettings = await readFile(join(settingsPath, 'data.json'), 'utf8');
   await evaluate(`await ${sorting}.setSuspended(true);return JSON.stringify(true);`);

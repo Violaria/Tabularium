@@ -2,7 +2,7 @@
 // after a change, destructive buttons with their confirmation, help and version history, the sorting conversion row
 // and a language change.
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { createTemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
 import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
@@ -123,7 +123,7 @@ try {
     return JSON.stringify({paragraphs,versions:names().slice(0,2)});
   `);
   assert.ok(help.paragraphs > 0, 'a help topic has paragraphs');
-  assert.ok(help.versions.includes('0.26.2'));
+  assert.equal(help.versions[0], JSON.parse(await readFile(resolve('manifest.json'), 'utf8')).version, 'the newest release first');
   report.scenarios.push('help-and-version-history');
 
   // A former sorting note gets a conversion row once it appears.
