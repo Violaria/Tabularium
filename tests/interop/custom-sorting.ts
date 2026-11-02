@@ -61,6 +61,25 @@ try {
   assert.deepEqual(await shown('Default'), ['Alpha.md', 'Beta.md', 'Zeta.md']);
   report.scenarios.push('list-with-notes-and-ellipsis');
 
+  // Reading view: the notes fold behind an icon in sortspec.md only.
+  await writeFile(join(vault.path, 'Default/Other.md'), '- a —— b\n');
+  const reading = await evaluate<{ icons: number; label: string | null; hidden: boolean; open: boolean; other: number }>(`
+    const read=async(path)=>{const leaf=app.workspace.getLeaf(true);await leaf.openFile(app.vault.getAbstractFileByPath(path),{state:{mode:'preview'}});await new Promise(r=>setTimeout(r,1500));return leaf.view.containerEl;};
+    let deadline=Date.now()+10000;
+    while(!app.vault.getAbstractFileByPath('Default/Other.md') && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
+    const view=await read('sortspec.md');
+    const icons=[...view.querySelectorAll('.markdown-reading-view .tabularium-sortspec-note')];
+    const text=icons[0]?.nextElementSibling;
+    const hidden=text?getComputedStyle(text).display==='none':false;
+    icons[0]?.click();
+    const open=text?getComputedStyle(text).display!=='none':false;
+    const other=(await read('Default/Other.md')).querySelectorAll('.tabularium-sortspec-note').length;
+    await app.vault.delete(app.vault.getAbstractFileByPath('Default/Other.md'));
+    return JSON.stringify({icons:icons.length,label:icons[0]?.getAttribute('aria-label')??null,hidden,open,other});
+  `);
+  assert.deepEqual(reading, { icons: 2, label: '笔记放最前', hidden: true, open: true, other: 0 });
+  report.scenarios.push('notes-folded-behind-an-icon-in-reading-view');
+
   await evaluate(`await app.vault.modify(app.vault.getAbstractFileByPath('sortspec.md'), ${JSON.stringify(rules.replace('- Default', '- Default\n  - Beta'))});return JSON.stringify(true);`);
   assert.deepEqual(await shown('Default', ['Beta.md', 'Alpha.md', 'Zeta.md']), ['Beta.md', 'Alpha.md', 'Zeta.md']);
   report.scenarios.push('edited-rules-apply-at-once');
