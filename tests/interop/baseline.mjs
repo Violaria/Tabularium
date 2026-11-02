@@ -36,8 +36,10 @@ let phase = 'setup';
 async function compose(...args) {
   return exec('docker', [...composeArgs, ...args], { env, timeout: 120_000 });
 }
+// `--only=a,b` runs the named scenarios while working on them; the others are reported as skipped and the run as partial.
+const only = process.argv.find(arg => arg.startsWith('--only='))?.slice('--only='.length).split(',');
 async function scenario(name, fn) {
-  if (process.argv.includes('--desktop') && !['desktop-obsidian', 'fast-fetch'].includes(name)) {
+  if ((process.argv.includes('--desktop') && !['desktop-obsidian', 'fast-fetch'].includes(name)) || (only && !only.includes(name))) {
     report.scenarios.push({ name, status: 'skipped' });
     return;
   }
@@ -449,6 +451,11 @@ try {
     await writeFile(join(runDir, 'fast-fetch.log'), redact(result.stdout + result.stderr));
     assert(report.requests.some(row => row.phase === phase && row.feed === 'continuous'));
   });
+  // The original Self-hosted LiveSync connects straight to the test CouchDB, beside Tabularium in the same vault.
+  if (gateway) await scenario('coexistence', () => pluginScript('coexistence', 'coexistence-user',
+    { UPSTREAM_COUCHDB_URI: upstream, UPSTREAM_COUCHDB_USER: 'baseline', UPSTREAM_COUCHDB_PASSWORD: password }));
+  // A device set up with the released 0.25.0 plug-in is upgraded to this build.
+  if (gateway) await scenario('namespace-migration', () => pluginScript('namespace-migration', 'migration-user'));
   report.status = report.scenarios.some(item => item.status === 'skipped') ? 'partial' : 'passed';
   if (report.status === 'partial') process.exitCode = 1;
 } catch (error) {

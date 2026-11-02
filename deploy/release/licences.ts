@@ -73,7 +73,7 @@ export async function licenceList(root: string, images: { nodeImage: string; cou
 
 ## Obsidian 插件
 
-插件基于 Self-hosted LiveSync（作者 vorotamoroz，MIT，许可文本见插件目录中的 LICENSE），整合 obsidian-custom-sort（作者 SebastianMC，按其 package.json 的 MIT 声明使用）。同步核心 \`@tabularium/sync-core\` 派生自 Self-hosted LiveSync 的公共库 Commonlib（作者 vorotamoroz，MIT，Copyright (c) 2022 vorotamoroz；起点为上游提交 \`3ecb95b\`，即 npm 上的 \`@vrtmrz/livesync-commonlib\` 0.2.1），删去了 Tabularium 不用的远端与传输方式，来源与改动记录在插件仓库的 \`packages/sync-core/UPSTREAM.md\`。下表列出插件工程的全部生产依赖，打包进 \`main.js\` 的是其中被插件引用的部分。
+插件以 MIT 许可发布（插件目录中的 LICENSE），起点是 Self-hosted LiveSync（作者 vorotamoroz，MIT，版权与许可声明见插件目录中的 NOTICE.md），整合 obsidian-custom-sort（作者 SebastianMC，按其 package.json 的 MIT 声明使用）。同步核心 \`@tabularium/sync-core\` 派生自 Self-hosted LiveSync 的公共库 Commonlib（作者 vorotamoroz，MIT，Copyright (c) 2022 vorotamoroz；起点为上游提交 \`3ecb95b\`，即 npm 上的 \`@vrtmrz/livesync-commonlib\` 0.2.1），删去了 Tabularium 不用的远端与传输方式，来源与改动记录在插件仓库的 \`packages/sync-core/UPSTREAM.md\`。下表列出插件工程的全部生产依赖，打包进 \`main.js\` 的是其中被插件引用的部分。
 
 ${copyleft.length ? `需要单独说明的组件：\n\n${copyleft.join('\n')}\n\n` : ''}${sections.join('\n\n')}
 

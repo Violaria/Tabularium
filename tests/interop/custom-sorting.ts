@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { createTemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
 import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
@@ -10,6 +11,9 @@ const runId = `sorting-${Date.now()}`;
 const reportDir = join(root, 'test-runs', runId);
 await mkdir(reportDir, { recursive: true });
 const binaryRoot = resolve('_testdata/obsidian-1.12.7/squashfs-root');
+// The standalone Custom File Explorer sorting plug-in, built from the commit in upstream/versions.json.
+const standalone = resolve('../../.test-runs/upstream-plugins/custom-sort');
+if (!existsSync(join(standalone, 'main.js'))) throw new Error(`Missing ${standalone}; run tests/interop/prepare-upstream-plugins.sh`);
 const binary = join(binaryRoot, 'obsidian');
 const cli = join(binaryRoot, 'obsidian-cli');
 const vault = await createTemporaryVault('tabularium-sorting-');
@@ -89,15 +93,64 @@ try {
   `);
   assert.deepEqual((await evaluate<string[]>("return JSON.stringify(globalThis.sortTestNames('Notes'));")).filter(name => name !== 'sortspec.md'), ['Zeta.md', 'Alpha.md', 'Beta.md']);
   report.scenarios.push('unload-restores-method-and-reload-retains-settings');
-  await evaluate(`
+  const standaloneDir = join(vault.path, '.obsidian/plugins/custom-sort');
+  await mkdir(standaloneDir, { recursive: true });
+  for (const file of ['main.js', 'manifest.json', 'styles.css']) await copyFile(join(standalone, file), join(standaloneDir, file));
+  /** Waits until the Notes folder is in the order of its sortspec.md, whichever plug-in sorts it. */
+  const sortedBySpec = () => evaluate<boolean>(`
+    const deadline=Date.now()+20000;
+    const want=JSON.stringify(['Zeta.md','Alpha.md','Beta.md']);
+    while(JSON.stringify(globalThis.sortTestNames('Notes').filter(n=>n!=='sortspec.md'))!==want && Date.now()<deadline) await new Promise(r=>setTimeout(r,200));
+    return JSON.stringify(JSON.stringify(globalThis.sortTestNames('Notes').filter(n=>n!=='sortspec.md'))===want);
+  `);
+  const notices = () => evaluate<string[]>("return JSON.stringify([...document.querySelectorAll('.notice')].map(n=>n.textContent));");
+  const reloadTabularium = `
     await app.plugins.disablePlugin('tabularium');
-    app.plugins.enabledPlugins.add('custom-sort');
     await app.plugins.enablePlugin('tabularium');
+    const deadline=Date.now()+30000;
+    while(!app.plugins.plugins['tabularium']?.core?.services.appLifecycle.isReady() && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
+  `;
+
+  await evaluate(`
+    await app.plugins.loadManifests();
+    await app.plugins.disablePlugin('tabularium');
+    await app.plugins.enablePluginAndSave('custom-sort');
+    await app.plugins.plugins['custom-sort'].switchPluginStateTo(true);
+    await app.plugins.enablePlugin('tabularium');
+    const deadline=Date.now()+30000;
+    while(!app.plugins.plugins['tabularium']?.core?.services.appLifecycle.isReady() && Date.now()<deadline) await new Promise(r=>setTimeout(r,100));
     if(app.plugins.plugins['tabularium'].sorting) throw new Error('Both sorting components enabled');
-    app.plugins.enabledPlugins.delete('custom-sort');
     return JSON.stringify(true);
   `);
-  report.scenarios.push('standalone-plugin-prevents-double-patching');
+  assert.equal(await sortedBySpec(), true, 'Custom File Explorer sorting sorts the files');
+  assert.deepEqual((await notices()).filter(text => /Custom (Sort|File Explorer)/.test(text ?? '')), [], 'no request to disable the standalone plug-in');
+  report.scenarios.push('standalone-plugin-sorts-and-built-in-stays-off');
+
+  await evaluate(`
+    await app.plugins.disablePluginAndSave('custom-sort');
+    ${reloadTabularium}
+    const sorting=app.plugins.plugins['tabularium'].sorting;
+    if(!sorting?.ready) throw new Error('Built-in sorting not back after disabling the standalone plug-in');
+    sorting.switchPluginStateTo(true);
+    return JSON.stringify(true);
+  `);
+  assert.equal(await sortedBySpec(), true, 'the built-in sorting is back');
+  report.scenarios.push('standalone-disabled-built-in-returns-on-reload');
+
+  await evaluate(`
+    const plugin=app.plugins.plugins['tabularium'];
+    const sorting=plugin.sorting;
+    await app.plugins.enablePluginAndSave('custom-sort');
+    // The next take-over, as the command or a layout change would start it.
+    sorting.switchPluginStateTo(true);
+    if(!sorting.steppedAside || sorting.ready) throw new Error('Built-in sorting did not step aside');
+    if(plugin._children?.includes(sorting)) throw new Error('Built-in sorting still loaded');
+    await app.plugins.plugins['custom-sort'].switchPluginStateTo(true);
+    return JSON.stringify(true);
+  `);
+  assert.equal(await sortedBySpec(), true, 'Custom File Explorer sorting sorts the files after the built-in stepped aside');
+  await evaluate("await app.plugins.disablePluginAndSave('custom-sort');return JSON.stringify(true);");
+  report.scenarios.push('standalone-enabled-while-running-built-in-steps-aside');
   report.status = 'passed';
   console.log(`PASS ${report.scenarios.length} real Obsidian sorting scenarios`);
 } catch (error) {

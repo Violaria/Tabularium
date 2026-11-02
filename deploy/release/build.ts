@@ -49,7 +49,7 @@ const nodeImage = (await readFile(join(root, 'apps/server/Dockerfile'), 'utf8'))
 await run('npm', ['run', 'build', '--prefix', 'apps/obsidian']);
 const plugin = join(out, 'obsidian', 'tabularium');
 await mkdir(plugin, { recursive: true });
-for (const file of ['main.js', 'manifest.json', 'styles.css', 'LICENSE']) await cp(join(root, 'apps/obsidian', file), join(plugin, file));
+for (const file of ['main.js', 'manifest.json', 'styles.css', 'LICENSE', 'NOTICE.md']) await cp(join(root, 'apps/obsidian', file), join(plugin, file));
 const manifest = JSON.parse(await readFile(join(plugin, 'manifest.json'), 'utf8'));
 if (manifest.id !== 'tabularium' || manifest.version !== version) throw new Error(`Plug-in manifest is ${manifest.id} ${manifest.version}`);
 await run('zip', ['-q', '-r', join(out, `tabularium-obsidian-${version}.zip`), 'tabularium'], join(out, 'obsidian'));

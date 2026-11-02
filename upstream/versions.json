@@ -7,7 +7,8 @@
       "commonlib": "0.2.1",
       "role": "plugin",
       "lockSha256": "9dc26a04179600d04baad5187c725621dcd945ce663439ddd2d770f9d231e053",
-      "license": "MIT"
+      "license": "MIT",
+      "coexistence": "Built unchanged by tests/interop/prepare-upstream-plugins.sh as the original Self-hosted LiveSync installed beside Tabularium in the coexistence scenarios."
     },
     {
       "repository": "https://github.com/vrtmrz/livesync-commonlib",
@@ -57,7 +58,8 @@
         "LICENSE.md": "6a5e2097e1347f38b94e92707d21921eae3acf140a2082fb3e92a0d69fc59452"
       },
       "license": "MIT",
-      "licenseDecision": "2026-10-29: follow the upstream package.json MIT declaration (decided by the project owner); LICENSE and LICENSE.md kept as upstream records"
+      "licenseDecision": "2026-10-29: follow the upstream package.json MIT declaration (decided by the project owner); LICENSE and LICENSE.md kept as upstream records",
+      "coexistence": "Built unchanged by tests/interop/prepare-upstream-plugins.sh as the standalone Custom File Explorer sorting plug-in in the desktop sorting scenarios."
     }
   ],
   "toolchain": {
