@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-interface LockEntry { version?: string; license?: string; licenses?: { type: string }[]; dev?: boolean; devOptional?: boolean; resolved?: string }
+interface LockEntry { version?: string; license?: string; licenses?: { type: string }[]; dev?: boolean; devOptional?: boolean; resolved?: string; link?: boolean }
 // Packages of the plug-in workspace itself, covered by the Self-hosted LiveSync MIT licence or the project's licence decision,
 // and dependencies whose package metadata omits a licence their files state.
 const known: Record<string, string> = {
@@ -22,6 +22,8 @@ export async function licenceList(root: string, images: { nodeImage: string; cou
   for (const [path, entry] of Object.entries(lock.packages)) {
     if (!path.startsWith('node_modules/') || entry.dev || entry.devOptional) continue;
     const name = path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length);
+    // A workspace package is a link without version or licence in the lock file; its own entry has them.
+    if (entry.link) Object.assign(entry, lock.packages[entry.resolved!]);
     // The lock file drops the old `licenses` array, so fall back to the installed package metadata.
     const installed = entry.license ? undefined : JSON.parse(await readFile(join(root, 'apps/obsidian', path, 'package.json'), 'utf8')) as LockEntry;
     const licence = known[name] ?? entry.license ?? installed?.license ?? installed?.licenses?.map(l => l.type).join(' OR ');
@@ -71,7 +73,7 @@ export async function licenceList(root: string, images: { nodeImage: string; cou
 
 ## Obsidian 插件
 
-插件基于 Self-hosted LiveSync（作者 vorotamoroz，MIT，许可文本见插件目录中的 LICENSE），整合 obsidian-custom-sort（作者 SebastianMC，按其 package.json 的 MIT 声明使用）。下表列出插件工程的全部生产依赖，打包进 \`main.js\` 的是其中被插件引用的部分。
+插件基于 Self-hosted LiveSync（作者 vorotamoroz，MIT，许可文本见插件目录中的 LICENSE），整合 obsidian-custom-sort（作者 SebastianMC，按其 package.json 的 MIT 声明使用）。同步核心 \`@tabularium/sync-core\` 派生自 Self-hosted LiveSync 的公共库 Commonlib（作者 vorotamoroz，MIT，Copyright (c) 2022 vorotamoroz；起点为上游提交 \`3ecb95b\`，即 npm 上的 \`@vrtmrz/livesync-commonlib\` 0.2.1），删去了 Tabularium 不用的远端与传输方式，来源与改动记录在插件仓库的 \`packages/sync-core/UPSTREAM.md\`。下表列出插件工程的全部生产依赖，打包进 \`main.js\` 的是其中被插件引用的部分。
 
 ${copyleft.length ? `需要单独说明的组件：\n\n${copyleft.join('\n')}\n\n` : ''}${sections.join('\n\n')}
 

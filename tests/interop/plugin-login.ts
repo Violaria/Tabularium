@@ -5,6 +5,8 @@ import { promisify } from 'node:util';
 import { mkdir, mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { createTemporaryVault, type TemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
 import type { ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
@@ -113,6 +115,32 @@ try {
   }
   const legacy = await evalObsidianJson<Record<string, unknown>>(obsidianCli, "(async()=>{const c=app.plugins.plugins['tabularium'].core.services.setting.currentSettings();return JSON.stringify({p2p:c.remoteType==='ONLY_P2P',P2P_Enabled:c.P2P_Enabled,P2P_AutoStart:c.P2P_AutoStart,syncInternalFiles:c.syncInternalFiles,usePluginSync:c.usePluginSync});})()", session.cliEnv);
   assert.deepEqual(legacy, { p2p: false, P2P_Enabled: false, P2P_AutoStart: false, syncInternalFiles: false, usePluginSync: false });
+  await session.app.stop(); session = undefined;
+
+  step('device D starts configured for object storage with live sync on, contacts no object storage, then connects');
+  // The sync core has no object-storage remote any more. The endpoint is a local listener that counts requests: the
+  // plug-in must start without using it and connect through Tabularium as usual.
+  const objectStorageRequests: string[] = [];
+  const objectStorage = createServer((request, response) => { objectStorageRequests.push(`${request.method} ${request.url}`); response.statusCode = 503; response.end(); });
+  await new Promise<void>((done) => objectStorage.listen(0, '127.0.0.1', done));
+  try {
+    const endpoint = `http://127.0.0.1:${(objectStorage.address() as AddressInfo).port}`;
+    const d = await createTemporaryVault(); vaults.push(d);
+    session = await startTabularium(d, obsidianCli, { remoteType: 'MINIO', isConfigured: true, liveSync: true, syncOnStart: true,
+      endpoint, bucket: 'legacy-bucket', accessKey: 'legacy', secretKey: 'legacy-secret', region: 'auto', forcePathStyle: true, bucketPrefix: 'vault/' });
+    await new Promise((done) => setTimeout(done, 5000));
+    assert.deepEqual(objectStorageRequests, [], 'no request reaches the object-storage endpoint after start-up');
+    await connectTabularium(session, obsidianCli, { server, username, password, vault: { id: vault.id }, deviceName: 'Obsidian D', passphrase }, ['OK']);
+    for (const [path, content] of Object.entries(notes)) {
+      const expected = typeof content === 'string' ? new TextEncoder().encode(content) : content;
+      assert.deepEqual(await until(async () => { const value = await read(join(d.path, path)).catch(() => undefined); return value && value.length === expected.length ? value : undefined; }), expected);
+    }
+    const remote = await evalObsidianJson<Record<string, unknown>>(obsidianCli, "(async()=>{const c=app.plugins.plugins['tabularium'].core.services.setting.currentSettings();return JSON.stringify({remoteType:c.remoteType});})()", session.cliEnv);
+    assert.deepEqual(remote, { remoteType: '' });
+    assert.deepEqual(objectStorageRequests, [], 'no request reaches the object-storage endpoint');
+  } finally {
+    objectStorage.close();
+  }
   await api('/sessions/current', 'DELETE', undefined, token);
   console.log('Plug-in login passed.');
 } finally {

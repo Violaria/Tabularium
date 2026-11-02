@@ -37,13 +37,15 @@ export async function startTabularium(vault: TemporaryVault, obsidianCli: string
 const confirmations = ['Overwrite all with remote files', 'Keep local files even if not on remote'];
 
 /**
- * connect() ends by reloading Obsidian, so it is started without waiting and the reload is awaited separately.
- * `buttons` adds answers for dialogues a particular start is expected to show.
+ * connect() ends by reloading Obsidian, so it is started without waiting and the reload is awaited separately: a mark
+ * left on the old page tells it apart from the reloaded one, since a device that was already configured reports ready
+ * before the reload. `buttons` adds answers for dialogues a particular start is expected to show.
  */
 export async function connectTabularium(session: ObsidianLiveSyncSession, obsidianCli: string, options: Record<string, unknown>, buttons: string[] = []) {
-  await evalObsidianJson(obsidianCli, `(async()=>{window.__tabulariumLogin=app.plugins.plugins['tabularium'].tabularium.connect(${JSON.stringify(options)}).then(()=>'done',e=>'error: '+e.message);return JSON.stringify(true);})()`, session.cliEnv);
+  await evalObsidianJson(obsidianCli, `(async()=>{window.__tabulariumConnecting=true;window.__tabulariumLogin=app.plugins.plugins['tabularium'].tabularium.connect(${JSON.stringify(options)}).then(()=>'done',e=>'error: '+e.message);return JSON.stringify(true);})()`, session.cliEnv);
   await until(async () => {
     await evalObsidianJson(obsidianCli, `(async()=>{for(const b of document.querySelectorAll('.modal button'))if(${JSON.stringify([...confirmations, ...buttons])}.includes(b.textContent?.trim()))b.click();return JSON.stringify(true);})()`, session.cliEnv);
+    if (await evalObsidianJson<boolean>(obsidianCli, "(async()=>JSON.stringify(Boolean(window.__tabulariumConnecting)))()", session.cliEnv).catch(() => true)) return false;
     return (await waitForLiveSyncCoreReady(obsidianCli, session.cliEnv, 5000)).appReady;
   }, 120_000).catch(async (error) => {
     // Shows what the app is waiting for: open dialogues and their buttons.

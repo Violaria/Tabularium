@@ -20,12 +20,13 @@
     },
     {
       "repository": "https://github.com/vrtmrz/livesync-commonlib",
-      "commit": "029a36fdeaf193cac0cf87f6245ccdf7e149f547",
+      "commit": "3ecb95b7fca23ed53b2ef52538be97507211e830",
       "version": "0.2.1",
       "commonlib": "0.2.1",
-      "role": "plugin-dependency",
-      "lockSha256": "30291cdce7712caa9816cac55f0b6ac6c3da41447fad485a07745268a89cf0d6",
-      "license": "MIT"
+      "role": "sync-core-origin",
+      "lockSha256": "93c1cca96fcb62632a6bb8bb9c81166f307badf16b2524b83331cc91bd6fe954",
+      "license": "MIT",
+      "note": "Merge of release/0.2.1, from which the npm package 0.2.1 was built; its src/ is the starting point of apps/obsidian/packages/sync-core (see UPSTREAM.md there)."
     },
     {
       "repository": "https://github.com/vrtmrz/livesync-commonlib",

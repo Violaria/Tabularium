@@ -9,7 +9,7 @@
   },
   "packageManager": "npm@11.6.1",
   "scripts": {
-    "bootstrap": "npm ci && npm run build:sorting && npm ci --prefix apps/obsidian",
+    "bootstrap": "npm ci && npm run build:sorting && npm ci --prefix apps/obsidian && npm run build:core --prefix apps/obsidian",
     "check": "npm run build:sorting && npm run check:server && npm run check:backup && npm run check:release && node --check tests/interop/gateway-baseline.mjs && node --check tests/interop/baseline.mjs && node apps/obsidian/node_modules/typescript/bin/tsc -p tests/interop/tsconfig.json && npm run check --prefix apps/obsidian",
     "build": "npm run build:sorting && npm run build:server && npm run build --prefix apps/obsidian && npm run build --prefix apps/obsidian --workspace self-hosted-livesync-cli",
     "test:unit": "npm run test:unit --prefix apps/obsidian",
