@@ -7,6 +7,7 @@ import { resolve, join } from 'node:path';
 import { createTemporaryVault } from '../../apps/obsidian/test/e2e-obsidian/runner/vault.ts';
 import { startObsidianLiveSyncSession, type ObsidianLiveSyncSession } from '../../apps/obsidian/test/e2e-obsidian/runner/session.ts';
 import { evalObsidianJson } from '../../apps/obsidian/test/e2e-obsidian/runner/cli.ts';
+import { compareLifecycle, DUMP_LIFECYCLE } from './lifecycleOrder.ts';
 
 const root = resolve('../..');
 const runId = `settings-${Date.now()}`;
@@ -40,6 +41,11 @@ try {
     await wait(()=>app.setting.pluginTabs.some(tab=>tab.id==='tabularium'),'the Tabularium settings tab',30000);
     return JSON.stringify(true);
   `);
+
+  // The handlers on each lifecycle event, in order, as the committed baseline has them.
+  const lifecycle = await compareLifecycle(await evaluate<Record<string, string[]>>(DUMP_LIFECYCLE));
+  assert.deepEqual(lifecycle, [], lifecycle.join('\n'));
+  report.scenarios.push('lifecycle-order-as-baseline');
 
   // The first level: the connection (here not connected), then one entry per page.
   const first = await evaluate<string[]>(`await openTab();return JSON.stringify(names());`);
