@@ -52,7 +52,7 @@ try {
   for (const [path, content] of Object.entries(notes)) { await mkdir(join(vault.path, path, '..'), { recursive: true }); await writeFile(join(vault.path, path), content); }
   session = await startTabularium(vault, obsidianCli);
   await connectTabularium(session, obsidianCli, { server, username, password: process.env.TABULARIUM_PASSWORD!, newPassword: password,
-    vault: { create: 'kindle' }, deviceName: 'Obsidian Kindle', passphrase: randomBytes(16).toString('hex') });
+    vault: { create: 'kindle' }, passphrase: randomBytes(16).toString('hex') });
   const token = (await api('/sessions', 'POST', { username, password })).token;
   await api('/me/kindle', 'PUT', { address: 'reader@kindle.com' }, token);
   const before = await mails();

@@ -31,7 +31,7 @@ try {
   for (const [path, content] of Object.entries(notes)) { await mkdir(join(vault.path, path, '..'), { recursive: true }); await writeFile(join(vault.path, path), content); }
   session = await startTabularium(vault, obsidianCli);
   await connectTabularium(session, obsidianCli, { server, username, password: process.env.TABULARIUM_PASSWORD!, newPassword: password,
-    vault: { create: 'shares' }, deviceName: 'Obsidian Share', passphrase: randomBytes(16).toString('hex') });
+    vault: { create: 'shares' }, passphrase: randomBytes(16).toString('hex') });
 
   step('"Share…" in the file menu opens the dialog with the references and their defaults');
   // A stand-in menu records the items plug-ins add; any other menu call is accepted and ignored.

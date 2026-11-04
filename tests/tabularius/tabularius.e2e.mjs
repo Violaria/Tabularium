@@ -111,7 +111,9 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert.equal(db.prepare('SELECT count(*) AS n FROM tabularius_vaults').get().n, 0);
     // The private folder is excluded from the start, so its notes are never indexed or embedded.
     await api(`/tabularius/vaults/${vault.id}`, 'POST', { passphrase, confirm: true, excluded: '私密', masks: 'ZETA-\\d+' });
-    assert((await api(`/vaults/${vault.id}/devices`)).some(d => d.name === 'Tabularius' && !d.revoked));
+    const hostedDevice = (await api(`/vaults/${vault.id}/devices`)).find(d => d.hosted);
+    assert.equal(hostedDevice.name, 'Tabularius');
+    assert.equal((await call(`/vaults/${vault.id}/devices/${hostedDevice.id}`, 'DELETE')).status, 409, 'the hosted device is removed only by turning Tabularius off');
     const status = async () => (await api('/tabularius')).vaults.find(v => v.id === vault.id);
     await until('the hosted client to fetch and index the vault', async () => { const s = await status(); return s.replicated && s.notes === 2 && s; });
     assert.equal(db.prepare('SELECT passphrase FROM tabularius_vaults').get().passphrase.includes(Buffer.from(passphrase)), false, 'the passphrase is stored encrypted');
@@ -759,7 +761,20 @@ test('Tabularius', { timeout: 900_000 }, async () => {
       assert.equal(db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n, 0, table);
     }
     await assert.rejects(access(join(temp, 'tabularius', vault.id)));
-    assert((await api(`/vaults/${vault.id}/devices`)).find(d => d.name === 'Tabularius').revoked);
+    assert(!(await api(`/vaults/${vault.id}/devices`)).some(d => d.hosted));
+    // Turned on again it starts from an empty copy: until the first synchronisation ends, the note tools say so.
+    await api(`/tabularius/vaults/${vault.id}`, 'POST', { passphrase, confirm: true });
+    const toolResults = async text => {
+      const id = JSON.parse(/event: conversation\ndata: (.*)/.exec(text)[1]).id;
+      return db.prepare('SELECT parts FROM tabularius_messages WHERE conversation_id=?').all(id).flatMap(row => JSON.parse(row.parts)).filter(part => part.type === 'tool_result').map(part => part.content);
+    };
+    const notice = /first synchronisation of this vault is still running/;
+    const during = await toolResults(await (await call(`/tabularius/vaults/${vault.id}/conversations`, 'POST', { message: '紫藤服务器' })).text());
+    assert(during.length && during.every(result => notice.test(result)), JSON.stringify(during).slice(0, 300));
+    await until('the hosted client to fetch the vault again', async () => (await status()).replicated);
+    const after = await toolResults(await (await call(`/tabularius/vaults/${vault.id}/conversations`, 'POST', { message: '紫藤服务器' })).text());
+    assert(after.length && !after.some(result => notice.test(result)));
+    await api(`/tabularius/vaults/${vault.id}`, 'DELETE');
     db.close();
     assert.deepEqual(errors, []);
   } finally {

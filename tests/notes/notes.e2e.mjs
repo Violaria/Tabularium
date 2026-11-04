@@ -110,6 +110,9 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     const devices = await api(`/vaults/${vault.id}/devices`);
     const browserDevice = devices.find(d => d.name.startsWith('网页 · Chrome'));
     assert(browserDevice, 'the browser is registered as a device');
+    assert(browserDevice.machineId, 'the browser reports itself as a client');
+    assert.match(browserDevice.name, /^网页 · Chrome · \S+$/);
+    assert(!/\d{4}-\d{2}-\d{2}/.test(browserDevice.name), 'the name carries no date');
 
     // Tree, preview, image from the local replica, escaped HTML and in-page links.
     await page.getByRole('button', { name: '笔记', exact: true }).click();
@@ -180,15 +183,17 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
       return JSON.stringify([Object.entries(localStorage), records]);
     });
     assert(!stored.includes(passphrase), 'passphrase found in browser storage');
-    // Make the stored credentials look close to expiry: the next unlock renews them.
-    await page.evaluate(() => new Promise(done => {
+    // Make the stored credentials look close to expiry: the next unlock renews them. They are also a credential from
+    // before clients, with only a name: the next unlock puts it under this browser's client.
+    const older = await api(`/vaults/${vault.id}/devices`, 'POST', { name: 'Older browser' });
+    await page.evaluate(older => new Promise(done => {
       const request = indexedDB.open('tabularium-notes');
       request.onsuccess = () => {
         const store = request.result.transaction('vaults', 'readwrite').objectStore('vaults');
         const all = store.getAll();
-        all.onsuccess = () => { for (const record of all.result) store.put({ ...record, expiresAt: Date.now() }); store.transaction.oncomplete = done; };
+        all.onsuccess = () => { for (const { joined, ...record } of all.result) store.put({ ...record, deviceId: older.id, username: older.username, password: older.password, expiresAt: Date.now() }); store.transaction.oncomplete = done; };
       };
-    }));
+    }), older);
     // Leaving web notes for another module stops its synchronisation; coming back in the same page opens the vault again
     // without asking, since the page keeps the passphrase in memory (never in storage, as checked above).
     await page.getByRole('link', { name: '首页', exact: true }).click();
@@ -211,7 +216,10 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
       request.onsuccess = () => { const all = request.result.transaction('vaults').objectStore('vaults').getAll(); all.onsuccess = () => done(all.result[0].expiresAt); };
     }));
     assert(renewed > Date.now() + 29 * 86_400_000, 'browser device renewed on unlock');
-    assert.equal((await api(`/vaults/${vault.id}/devices`)).find(d => d.id === browserDevice.id).expiresAt, renewed);
+    const afterUnlock = await api(`/vaults/${vault.id}/devices`);
+    assert.equal(afterUnlock.find(d => d.id === older.id).expiresAt, renewed);
+    assert.equal(afterUnlock.find(d => d.id === older.id).machineId, browserDevice.machineId, 'the older credential joined the client');
+    assert(!afterUnlock.some(d => d.id === browserDevice.id), 'and replaced the one this installation had');
 
     // A rebuilt vault stays locked: the page explains it and opens again once the owner unlocks it in account settings.
     await page.locator('.vault-more').click();
@@ -258,7 +266,7 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
       return { names, vaults, local: Object.keys(localStorage).filter(key => key.includes(id)) };
     }, vault.id);
     assert.deepEqual(left, { names: [], vaults: [], local: [] });
-    assert.equal((await api(`/vaults/${vault.id}/devices`)).find(d => d.id === browserDevice.id).revoked, 1);
+    assert(!(await api(`/vaults/${vault.id}/devices`)).some(d => d.id === older.id));
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

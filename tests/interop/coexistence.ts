@@ -77,7 +77,7 @@ try {
   await mkdir(join(vault.path, 'notes'), { recursive: true });
   await writeFile(join(vault.path, 'notes/本机.md'), '# 本机\n\n写在共存的笔记库里。\n');
   session = await startTabularium(vault, obsidianCli);
-  await connectTabularium(session, obsidianCli, { server, username, password: initialPassword, newPassword: password, vault: { create: 'coexistence' }, deviceName: 'Obsidian', passphrase });
+  await connectTabularium(session, obsidianCli, { server, username, password: initialPassword, newPassword: password, vault: { create: 'coexistence' }, passphrase });
   const token = (await api('/sessions', 'POST', { username, password })).token;
   const remote = (await api('/vaults', 'GET', undefined, token)).find((v: { name: string }) => v.name === 'coexistence');
   const device = await api(`/vaults/${remote.id}/devices`, 'POST', { name: 'verifier' }, token);

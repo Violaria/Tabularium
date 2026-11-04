@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -33,7 +33,7 @@ async function api(path: string, method = 'GET', body?: unknown, token?: string)
   return response.json();
 }
 const start = (vault: TemporaryVault) => startTabularium(vault, obsidianCli);
-const connect = (session: ObsidianSession, options: Record<string, unknown>) => connectTabularium(session, obsidianCli, { server, username, ...options });
+const connect = (session: ObsidianSession, options: Record<string, unknown>, buttons: string[] = []) => connectTabularium(session, obsidianCli, { server, username, ...options }, buttons);
 async function read(path: string) {
   return new Uint8Array(await readFile(path));
 }
@@ -45,13 +45,14 @@ try {
   const a = await createTemporaryVault(); vaults.push(a);
   for (const [path, content] of Object.entries(notes)) { await mkdir(join(a.path, path, '..'), { recursive: true }); await writeFile(join(a.path, path), content); }
   session = await start(a);
-  await connect(session, { password: initialPassword, newPassword: password, vault: { create: 'plugin-login' }, deviceName: 'Obsidian A', passphrase });
+  await connect(session, { password: initialPassword, newPassword: password, vault: { create: 'plugin-login' }, passphrase });
 
   const token = (await api('/sessions', 'POST', { username, password })).token;
   const vault = (await api('/vaults', 'GET', undefined, token)).find((v: { name: string }) => v.name === 'plugin-login');
   assert(vault, 'vault created by the plug-in');
   const connection = JSON.parse(await readFile(join(a.path, '.obsidian/plugins/tabularium/tabularium.json'), 'utf8'));
-  assert.deepEqual([connection.server, connection.vaultId, connection.deviceName], [server, vault.id, 'Obsidian A']);
+  assert.deepEqual([connection.server, connection.vaultId, connection.joined], [server, vault.id, true]);
+  assert.match(connection.deviceName, /^Obsidian · /);
 
   step('a CLI client with the same passphrase receives both notes');
   const device = await api(`/vaults/${vault.id}/devices`, 'POST', { name: 'verifier' }, token);
@@ -82,22 +83,72 @@ try {
   assert.equal(renewal.renewed, true);
   assert(renewal.expiresAt > Date.now() + 29 * 86_400_000, 'expiry restarts from now');
   assert.equal(JSON.parse(await readFile(join(a.path, '.obsidian/plugins/tabularium/tabularium.json'), 'utf8')).expiresAt, renewal.expiresAt);
-  assert.equal((await api(`/vaults/${vault.id}/devices`, 'GET', undefined, token)).find((d: { name: string }) => d.name === 'Obsidian A').expiresAt, renewal.expiresAt);
+  assert.equal((await api(`/vaults/${vault.id}/devices`, 'GET', undefined, token)).find((d: { id: string }) => d.id === connection.deviceId).expiresAt, renewal.expiresAt);
   await session.app.stop(); session = undefined;
 
   step('device B fetches the existing vault, then disconnects');
   const b = await createTemporaryVault(); vaults.push(b);
   session = await start(b);
-  await connect(session, { password, vault: { id: vault.id }, deviceName: 'Obsidian B', passphrase });
+  await connect(session, { password, vault: { id: vault.id }, passphrase });
   for (const [path, content] of Object.entries(notes)) {
     const expected = typeof content === 'string' ? new TextEncoder().encode(content) : content;
     assert.deepEqual(await until(async () => { const value = await read(join(b.path, path)).catch(() => undefined); return value && value.length === expected.length ? value : undefined; }), expected);
   }
+  // Each temporary vault has its own Obsidian profile, so A and B are two clients; the CLI's credential stands alone.
   const devices = await api(`/vaults/${vault.id}/devices`, 'GET', undefined, token);
-  assert.deepEqual(devices.map((d: { name: string }) => d.name).sort(), ['Obsidian A', 'Obsidian B', 'verifier']);
+  assert.deepEqual(devices.filter((d: { machineId: string | null }) => !d.machineId).map((d: { name: string }) => d.name), ['verifier']);
+  assert.equal(new Set(devices.map((d: { machineId: string | null }) => d.machineId).filter(Boolean)).size, 2);
+  const beforeAgain = (await api('/machines', 'GET', undefined, token)).length;
+
+  step('signing in again from B replaces its credential');
+  await connect(session, { password, vault: { id: vault.id }, passphrase }, ['OK']);
+  const afterAgain = await api(`/vaults/${vault.id}/devices`, 'GET', undefined, token);
+  assert.equal(afterAgain.length, devices.length, 'the list keeps its length');
+  assert.equal((await api('/machines', 'GET', undefined, token)).length, beforeAgain);
+  const bDevice = JSON.parse(await readFile(join(b.path, '.obsidian/plugins/tabularium/tabularium.json'), 'utf8')).deviceId;
+  assert(afterAgain.some((d: { id: string }) => d.id === bDevice));
   const disconnected = await evalObsidianJson<Record<string, unknown>>(obsidianCli, "(async()=>{const p=app.plugins.plugins['tabularium'];await p.tabularium.disconnect();const c=p.core.services.setting.currentSettings();return JSON.stringify({configured:c.isConfigured,uri:c.couchDB_URI,connection:Boolean(p.tabularium.connection),file:await app.vault.adapter.exists('.obsidian/plugins/tabularium/tabularium.json')});})()", session.cliEnv);
   assert.deepEqual(disconnected, { configured: false, uri: '', connection: false, file: false });
   assert(await readFile(join(b.path, 'notes/登录测试.md'), 'utf8'), 'notes kept after disconnect');
+  assert(!(await api(`/vaults/${vault.id}/devices`, 'GET', undefined, token)).some((d: { id: string }) => d.id === bDevice), 'disconnecting revokes the credential');
+  await session.app.stop(); session = undefined;
+
+  step('a second Obsidian vault of the same profile joins the same client');
+  // Vault A's profile opens another vault: the two share window.localStorage, so one client holds both credentials.
+  const second = await createTemporaryVault(); vaults.push(second);
+  const sameProfile: TemporaryVault = { ...second, homePath: a.homePath, xdgConfigPath: a.xdgConfigPath, userDataPath: a.userDataPath };
+  const registry = await readFile(join(second.userDataPath, 'obsidian.json'), 'utf8');
+  for (const dir of [join(a.homePath, '.config/obsidian'), join(a.xdgConfigPath, 'obsidian'), join(a.homePath, 'Library/Application Support/obsidian'), a.userDataPath])
+    await writeFile(join(dir, 'obsidian.json'), registry);
+  await copyFile(join(second.userDataPath, `${second.id}.json`), join(a.userDataPath, `${second.id}.json`));
+  session = await start(sameProfile);
+  await connect(session, { password, vault: { id: vault.id }, passphrase }, ['OK']);
+  const firstClient = (await api(`/vaults/${vault.id}/devices`, 'GET', undefined, token)).find((d: { id: string }) => d.id === connection.deviceId)?.machineId;
+  const secondConnection = JSON.parse(await readFile(join(sameProfile.path, '.obsidian/plugins/tabularium/tabularium.json'), 'utf8'));
+  const secondDevices = await api(`/vaults/${vault.id}/devices`, 'GET', undefined, token);
+  assert.equal(secondDevices.find((d: { id: string }) => d.id === secondConnection.deviceId)?.machineId, firstClient, 'one client for the two vaults of a profile');
+  assert(secondDevices.some((d: { id: string }) => d.id === connection.deviceId), 'the first vault keeps its credential');
+  step('a connection from before clients joins at start-up, without signing in');
+  // This page signs in the way versions before clients did: a credential with only a name. The reload at the end of
+  // connecting is the first start with that connection.
+  await evalObsidianJson(obsidianCli, "(async()=>{const t=app.plugins.plugins['tabularium'].tabularium;const api=t.api.bind(t);t.api=s=>{const a=api(s);a.issueDevice=id=>a.request('/vaults/'+id+'/devices','POST',{name:'Obsidian Old'});return a};return JSON.stringify(true)})()", session.cliEnv);
+  await connect(session, { password, vault: { id: vault.id }, passphrase }, ['OK']);
+  const stored = join(sameProfile.path, '.obsidian/plugins/tabularium/tabularium.json');
+  const joined = await until(async () => { const value = JSON.parse(await readFile(stored, 'utf8')); return value.joined ? value : undefined; });
+  assert.match(joined.deviceName, /^Obsidian · /);
+  const upgraded = (await api(`/vaults/${vault.id}/devices`, 'GET', undefined, token)).find((d: { id: string }) => d.id === joined.deviceId);
+  assert.notEqual(joined.deviceId, secondConnection.deviceId);
+  assert.equal(upgraded.machineId, firstClient, 'the old credential joined the client of this machine');
+  assert.equal(upgraded.expiresAt, joined.expiresAt, 'joining keeps the expiry');
+
+  step('a name changed on the web reaches the plug-in, and revoked credentials are told at the next start');
+  await api(`/machines/${firstClient}`, 'PATCH', { name: '书房台式机' }, token);
+  const report = (expression: string) => evalObsidianJson<{ result: boolean; name: string; notice: string }>(obsidianCli, `(async()=>{const t=app.plugins.plugins['tabularium'].tabularium;const result=await t.joinClient();${expression};return JSON.stringify({result,name:t.connection.deviceName,notice:[...document.querySelectorAll('.notice')].map(n=>n.textContent).join('|')})})()`, session!.cliEnv);
+  assert.equal((await report('')).name, '书房台式机');
+  await api(`/vaults/${vault.id}/devices/${joined.deviceId}`, 'DELETE', undefined, token);
+  const refused = await report('');
+  assert.equal(refused.result, false);
+  assert.match(refused.notice, /Tabularium/, `a notice about the credentials: ${refused.notice}`);
   await session.app.stop(); session = undefined;
 
   step('device C starts with peer-to-peer and hidden-file sync switched on in data.json, then connects');
@@ -108,7 +159,7 @@ try {
     P2P_AutoSyncPeers: 'Obsidian A', syncInternalFiles: true, usePluginSync: true });
   // A data.json that already exists gets the schema's older defaults for what it lacks, not those of a new vault, so the
   // fetch adopts the vault's synchronisation parameters and says so in a dialogue with only OK.
-  await connectTabularium(session, obsidianCli, { server, username, password, vault: { id: vault.id }, deviceName: 'Obsidian C', passphrase }, ['OK']);
+  await connectTabularium(session, obsidianCli, { server, username, password, vault: { id: vault.id }, passphrase }, ['OK']);
   for (const [path, content] of Object.entries(notes)) {
     const expected = typeof content === 'string' ? new TextEncoder().encode(content) : content;
     assert.deepEqual(await until(async () => { const value = await read(join(c.path, path)).catch(() => undefined); return value && value.length === expected.length ? value : undefined; }), expected);
@@ -130,7 +181,7 @@ try {
       endpoint, bucket: 'legacy-bucket', accessKey: 'legacy', secretKey: 'legacy-secret', region: 'auto', forcePathStyle: true, bucketPrefix: 'vault/' });
     await new Promise((done) => setTimeout(done, 5000));
     assert.deepEqual(objectStorageRequests, [], 'no request reaches the object-storage endpoint after start-up');
-    await connectTabularium(session, obsidianCli, { server, username, password, vault: { id: vault.id }, deviceName: 'Obsidian D', passphrase }, ['OK']);
+    await connectTabularium(session, obsidianCli, { server, username, password, vault: { id: vault.id }, passphrase }, ['OK']);
     for (const [path, content] of Object.entries(notes)) {
       const expected = typeof content === 'string' ? new TextEncoder().encode(content) : content;
       assert.deepEqual(await until(async () => { const value = await read(join(d.path, path)).catch(() => undefined); return value && value.length === expected.length ? value : undefined; }), expected);

@@ -68,7 +68,7 @@ try {
   report.legacyLocalDocuments = legacy.plain;
   console.log(`[migration] legacy local database holds ${legacy.plain} unobfuscated documents`);
   const uploadStarted = Date.now();
-  await connectTabularium(session, obsidianCli, { server, username, password, vault: { create: 'Commentarii' }, deviceName: 'Obsidian A', passphrase });
+  await connectTabularium(session, obsidianCli, { server, username, password, vault: { create: 'Commentarii' }, passphrase });
 
   const token = (await api('/sessions', 'POST', { username, password })).token;
   const vault = (await api('/vaults', 'GET', undefined, token)).find((v: { name: string }) => v.name === 'Commentarii');
@@ -100,7 +100,7 @@ try {
   const b = await createTemporaryVault(); vaults.push(b);
   session = await startTabularium(b, obsidianCli);
   const fetchStarted = Date.now();
-  await connectTabularium(session, obsidianCli, { server, username, password, vault: { id: vault.id }, deviceName: 'Obsidian B', passphrase });
+  await connectTabularium(session, obsidianCli, { server, username, password, vault: { id: vault.id }, passphrase });
   // Fetched when every file is present on disk and nothing has changed for ten seconds.
   let lastSize = -1; stableSince = Date.now();
   const fetched = await until(async () => {

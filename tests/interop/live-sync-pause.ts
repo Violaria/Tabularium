@@ -42,7 +42,7 @@ try {
   step('a device signs in; live sync is on');
   vault = await createTemporaryVault();
   session = await startTabularium(vault, obsidianCli);
-  await connectTabularium(session, obsidianCli, { server, username, password: initialPassword, newPassword: password, vault: { create: 'pause' }, deviceName: 'Obsidian', passphrase });
+  await connectTabularium(session, obsidianCli, { server, username, password: initialPassword, newPassword: password, vault: { create: 'pause' }, passphrase });
   assert.deepEqual(await state(session), { paused: false, liveSync: true, syncOnSave: false });
   assert.equal(await command(session, 'resume-live-sync'), false, 'resume is not offered while live sync runs');
 
