@@ -46,8 +46,10 @@ export async function restore(directory: string, options: { project: string; tar
   await importVolume(couchImage, notesVolume, path, 'notes.tar');
   const sqlite = await inspectSqlite(manifest.versions.server.image, appVolume, true);
   if (sqlite.schema !== manifest.sqlite.schema) throw new Error(`SQLite schema ${sqlite.schema}, backup has ${manifest.sqlite.schema}`);
-  await compose.run('up', '-d', '--wait', '--no-build');
+  // Checked before the server starts: its hosted clients write replication checkpoints as soon as they connect.
+  await compose.run('up', '-d', '--wait', '--no-build', 'couchdb');
   const databases = await checkCouch(compose, config, manifest, sqlite.vaults);
+  await compose.run('up', '-d', '--wait', '--no-build');
   return {
     report: { ok: true, project: options.project, target, port: Number(options.port), vaults: sqlite.vaults.length, clearedSessions: sqlite.sessions, databases },
     compose, appVolume, notesVolume,

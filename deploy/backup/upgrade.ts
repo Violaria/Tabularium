@@ -96,10 +96,13 @@ export async function rollback(directory: string, options: DeploymentOptions) {
     stage = 'check SQLite';
     const sqlite = await inspectSqlite(manifest.versions.server.image, compose.volume(config, 'server', APP_TARGET), true);
     if (sqlite.schema !== manifest.sqlite.schema) throw new Error(`SQLite schema ${sqlite.schema}, backup has ${manifest.sqlite.schema}`);
-    stage = 'start services';
-    await compose.run('up', '-d', '--wait', '--no-build', '--force-recreate');
+    stage = 'start CouchDB';
+    // Checked before the server starts: its hosted clients write replication checkpoints as soon as they connect.
+    await compose.run('up', '-d', '--wait', '--no-build', '--force-recreate', 'couchdb');
     stage = 'check CouchDB';
     await checkCouch(compose, config, manifest, sqlite.vaults);
+    stage = 'start services';
+    await compose.run('up', '-d', '--wait', '--no-build', '--force-recreate');
     report.ok = true;
     report.clearedSessions = sqlite.sessions;
     report.schema = sqlite.schema;
