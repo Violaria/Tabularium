@@ -18,7 +18,7 @@ import { createFilter } from '../../apps/server/dist/tabularius/filter.js';
 const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, '../..');
 const cliPath = join(root, 'apps/server/clients/cli/dist/index.cjs');
-const sourceVault = resolve(process.argv[2] ?? '/opt/obsidian/Commentarii');
+const sourceVault = resolve(process.argv[2] ?? '/opt/Bibliotheca/Commentarii');
 const env = name => { const value = process.env[name]; if (!value) throw new Error(`${name} is required`); return value; };
 const providerName = process.env.TABULARIUS_PROVIDER ?? 'vllm';
 const upstreamUrl = { openai: 'https://api.openai.com', anthropic: 'https://api.anthropic.com' }[providerName] ?? process.env.TABULARIUS_VLLM_URL ?? 'http://127.0.0.1:8000';
