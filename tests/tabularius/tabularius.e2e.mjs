@@ -274,6 +274,14 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     // The vault's settings: prompt and the vault's recipe; per-vault models and parameters are gone.
     await page.goto(`${url}/tabularius/?vault=${vault.id}`);
     await page.getByRole('button', { name: '设置', exact: true }).click();
+    // The full prompt and the client log open in dialogs.
+    for (const [name, text] of [['预览完整提示词', '服务器的默认提示词'], ['客户端日志', 'Daemon']]) {
+      await page.getByRole('button', { name, exact: true }).click();
+      const shown = page.locator('dialog.view-dialog');
+      await expect(shown).toContainText(text);
+      await shown.getByRole('button', { name: '关闭', exact: true }).click();
+      await expect(shown).toHaveCount(0);
+    }
     await expect(page.locator('#vault-prompt textarea')).toHaveValue(/本库的规范/);
     await page.locator('#vault-recipe').selectOption(esmeralda.id);
     await until('the vault recipe to be saved', async () => (await status()).recipe === esmeralda.id);
@@ -755,6 +763,10 @@ test('Tabularius', { timeout: 900_000 }, async () => {
     assert(mock.requests.vllm.length > vllmStart && mock.requests.vllm.at(-1).body.model === 'esmeralda');
     assert.equal((await api(`/tabularius/conversations/${startedId}`, 'PATCH', { recipe: null })).recipe, recipeId('GPT 测试'));
 
+    // The command log can be cleared; waiting commands stay.
+    assert((await api('/tabularius/commands')).length > 0);
+    await api('/tabularius/commands', 'DELETE');
+    assert.equal((await api('/tabularius/commands')).filter(command => command.status !== 'pending').length, 0);
     // Disabling removes everything the server held for this vault.
     await api(`/tabularius/vaults/${vault.id}`, 'DELETE');
     for (const table of ['tabularius_vaults', 'tabularius_files', 'tabularius_chunks', 'tabularius_conversations', 'tabularius_messages', 'tabularius_proposals', 'tabularius_changes']) {

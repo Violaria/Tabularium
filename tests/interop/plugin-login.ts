@@ -151,6 +151,24 @@ try {
   assert.match(refused.notice, /Tabularium/, `a notice about the credentials: ${refused.notice}`);
   await session.app.stop(); session = undefined;
 
+  step('a device with an old copy signs in: the server stays as it is, and files only on the device are kept');
+  // The old copy is written last, so its files look newer than the server's.
+  const old = await createTemporaryVault(); vaults.push(old);
+  await mkdir(join(old.path, 'notes'), { recursive: true });
+  await writeFile(join(old.path, 'notes/登录测试.md'), '# 登录测试\n\n手机上的旧副本。\n');
+  await writeFile(join(old.path, 'notes/只在本机.md'), '# 只在本机\n');
+  session = await start(old);
+  await connect(session, { password, vault: { id: vault.id }, passphrase });
+  assert.equal(await until(async () => { const value = await readFile(join(old.path, 'notes/登录测试.md'), 'utf8'); return value === notes['notes/登录测试.md'] ? value : undefined; }), notes['notes/登录测试.md']);
+  assert.equal(await readFile(join(old.path, 'notes/只在本机.md'), 'utf8'), '# 只在本机\n', 'a file only on the device is kept');
+  const openDialogues = await evalObsidianJson<number>(obsidianCli, "(async()=>JSON.stringify(document.querySelectorAll('.modal').length))()", session.cliEnv);
+  assert.equal(openDialogues, 0, 'nothing is asked file by file');
+  const freshDatabase = join(temporary, 'cli-db-2'), freshVault = join(temporary, 'cli-vault-2');
+  await mkdir(freshDatabase, { recursive: true }); await mkdir(freshVault, { recursive: true });
+  await exec(process.execPath, [cli, freshDatabase, '--settings', settingsPath, '--vault', freshVault, 'fetch', '--force', '--write-settings'], { timeout: 60_000 });
+  assert.equal(await readFile(join(freshVault, 'notes/登录测试.md'), 'utf8'), notes['notes/登录测试.md'], 'the old copy did not reach the server');
+  await session.app.stop(); session = undefined;
+
   step('device C starts with peer-to-peer and hidden-file sync switched on in data.json, then connects');
   // Settings an upstream LiveSync profile can carry; the plug-in no longer contains these features and must start,
   // connect and synchronise regardless, with the features left off.

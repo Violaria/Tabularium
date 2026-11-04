@@ -93,6 +93,7 @@ test('editing on the web notes page', { timeout: 900_000 }, async () => {
     await page.getByLabel('用户名').fill('admin');
     await page.getByLabel('密码').fill(userPassword);
     await page.getByRole('button', { name: '登录' }).click();
+    await page.getByRole('link', { name: '云笔记', exact: true }).click();
     await unlock();
     await page.evaluate(() => navigator.serviceWorker.ready);
 

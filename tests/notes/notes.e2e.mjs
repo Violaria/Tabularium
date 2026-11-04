@@ -92,6 +92,10 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
     await page.getByLabel('用户名').fill('admin');
     await page.getByLabel('密码').fill(userPassword);
     await page.getByRole('button', { name: '登录' }).click();
+    // A sign-in starts at the home page, wherever the address was left.
+    await expect(page.locator('.home-vault').first()).toBeVisible();
+    assert.equal(new URL(page.url()).pathname, '/');
+    await page.getByRole('link', { name: '云笔记', exact: true }).click();
     await unlock('wrong-passphrase');
     await expect(page.getByText('密码短语错误。')).toBeVisible({ timeout: 60_000 });
     // The passphrase is never readable on screen: a password field, or text drawn as dots (out of password managers' reach).
@@ -252,6 +256,13 @@ test('web notes page in real Chromium', { timeout: 600_000 }, async () => {
       assert.equal(await epubErrors(file), 0);
     }
     assert(parseMessage(sink.messages[0].raw).data.includes(png), 'image packed into the web-built book');
+
+    // The delivery history can be cleared; what was sent today still counts towards the daily limit.
+    const usedToday = (await api('/me/kindle')).sentToday;
+    assert(usedToday > 0 && (await api('/me/kindle/deliveries')).length > 0);
+    await api('/me/kindle/deliveries', 'DELETE');
+    assert.deepEqual(await api('/me/kindle/deliveries'), []);
+    assert.equal((await api('/me/kindle')).sentToday, usedToday);
 
     // Clearing removes the local replica and revokes the browser's device.
     await page.locator('.vault-more').click();

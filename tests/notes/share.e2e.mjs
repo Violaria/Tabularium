@@ -73,6 +73,7 @@ test('sharing notes and folders from web notes', { timeout: 600_000 }, async () 
     await owner.getByLabel('用户名').fill('admin');
     await owner.getByLabel('密码').fill(userPassword);
     await owner.getByRole('button', { name: '登录' }).click();
+    await owner.getByRole('link', { name: '云笔记', exact: true }).click();
     await owner.getByRole('button', { name: '分享库' }).click();
     await owner.getByLabel('E2EE 密码短语').fill(passphrase);
     await owner.getByRole('button', { name: '解锁' }).click();
@@ -200,6 +201,11 @@ test('sharing notes and folders from web notes', { timeout: 600_000 }, async () 
     await owner.locator('dialog.dialog').getByRole('button', { name: '撤回分享' }).click();
     await expect(owner.getByText('已撤回分享。')).toBeVisible();
     assert.equal((await fetch(`${url}/api/v1/public/shares/public-note`)).status, 410);
+    // Withdrawn and expired shares can be cleared: they leave the list, and their addresses stop answering.
+    await owner.getByRole('button', { name: '清理失效分享' }).click();
+    await owner.locator('dialog.dialog').getByRole('button', { name: '清理失效分享' }).click();
+    await expect(owner.locator('tr[data-share]', { hasText: '/s/public-note' })).toHaveCount(0);
+    assert.equal((await fetch(`${url}/api/v1/public/shares/public-note`)).status, 404);
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();
