@@ -208,9 +208,20 @@ test('protecting what a share shows', { timeout: 900_000 }, async () => {
     await owner.keyboard.press('ControlOrMeta+a');
     await owner.keyboard.press('ControlOrMeta+c');
     assert.equal((await owner.evaluate(() => navigator.clipboard.readText())).trim(), '可以标记的文字');
+    await expect(editor.locator('.tabularium-sensitive-eye')).toHaveCount(1);
+    // A table drawn in live render shows its marked text too; reading view shows it plain.
+    await owner.keyboard.press('ControlOrMeta+End');
+    for (const line of ['', '', '| a | b |', '| --- | --- |', `| k | ${OPEN}表格里的${CLOSE} |`, '', '尾']) {
+      await owner.keyboard.press('Enter');
+      if (line) await owner.keyboard.insertText(line);
+    }
+    await expect(editor.locator('.tabularium-sensitive-rendered')).toHaveText('表格里的');
+    assert.notEqual(await editor.locator('.tabularium-sensitive-rendered').evaluate((node) => getComputedStyle(node, '::after').content), 'none');
     await owner.getByRole('button', { name: '完成' }).click();
     await expect(owner.locator('.md-body')).toContainText('可以标记的文字');
     assert.doesNotMatch(await owner.locator('.md-body').textContent(), /[\u2061-\u2063]/);
+    await expect(owner.locator('.md-body')).toContainText('表格里的');
+    await expect(owner.locator('.md-body .tabularium-sensitive-rendered')).toHaveCount(0);
 
     // The same note twice: as ordinary public page, and with copy protection.
     dialog = await menu('明');
