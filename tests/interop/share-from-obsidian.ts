@@ -22,6 +22,7 @@ const notes: Record<string, string | Buffer> = {
   'Shared/Plan.md': `# Plan\n\nSee [[Private]].\n\n![[chart.png]]\n\nKey ${secret('inlinesecret')}\n\n| a | b |\n| --- | --- |\n| key | ${secret('tablesecret')} |\n\n\`\`\`text\nPW=${secret('fencesecret')}\n\`\`\`\n`,
   'Shared/chart.png': png,
   'Private.md': 'Private text.\n',
+  'Action.md': 'before word after\n',
 };
 const step = (name: string) => console.log(`[share-from-obsidian] ${name}`);
 const run = (session: ObsidianSession, body: string) =>
@@ -100,6 +101,15 @@ try {
   assert.deepEqual(toolbars.inCell, [true], 'the cell\'s toolbar shows');
   assert.equal(toolbars.eye, true, 'marked text in the cell has an eye');
   assert.equal(reading.invisible, false, 'reading view holds no marks');
+
+  step('in the editor: the Sensitive command marks the selection, the cursor steps over the marks, copying leaves them behind');
+  const editing = await run(session, `const remote=window.require('@electron/remote');const contents=remote.getCurrentWebContents();if(!contents.debugger.isAttached())contents.debugger.attach('1.3');const send=(m,p)=>contents.debugger.sendCommand(m,p);await send('Emulation.setFocusEmulationEnabled',{enabled:true});const wait=(ms)=>new Promise(r=>setTimeout(r,ms));const press=async(key,code,windowsVirtualKeyCode,extra={})=>{await send('Input.dispatchKeyEvent',{type:'rawKeyDown',key,code,windowsVirtualKeyCode,...extra});await send('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode,modifiers:extra.modifiers??0});await wait(150);};const right=()=>press('ArrowRight','ArrowRight',39);const left=()=>press('ArrowLeft','ArrowLeft',37);const leaf=app.workspace.getLeaf(false);await leaf.openFile(app.vault.getAbstractFileByPath('Action.md'),{state:{mode:'source',source:true}});await wait(800);const view=app.workspace.activeLeaf.view;const editor=view.editor;const root=view.containerEl;const line=root.querySelector('.cm-line').getBoundingClientRect();for(const type of ['mouseMoved','mousePressed','mouseReleased'])await send('Input.dispatchMouseEvent',{type,x:line.x+20,y:line.y+line.height/2,button:type==='mouseMoved'?'none':'left',clickCount:type==='mouseMoved'?0:1});await wait(400);const active=document.activeElement?.className;const at=(ch)=>({line:0,ch});editor.setSelection(at(7),at(11));app.commands.executeCommandById('tabularium:format-sensitive');await wait(300);const marked=editor.getValue();const shown=[...root.querySelectorAll('.tabularium-sensitive')].map(e=>e.textContent);const eyes=root.querySelectorAll('.tabularium-sensitive-eye').length;editor.setCursor(at(7));await right();const overOpen=editor.getCursor().ch;await right();const intoWord=editor.getCursor().ch;editor.setCursor(at(14));await right();const overClose=editor.getCursor().ch;await left();const backOverClose=editor.getCursor().ch;editor.setSelection(at(0),at(editor.getLine(0).length));remote.clipboard.writeText('');await press('c','KeyC',67,{modifiers:2,commands:['copy']});const copied=remote.clipboard.readText();editor.setSelection(at(10),at(14));app.commands.executeCommandById('tabularium:format-sensitive');await wait(300);const unmarked=editor.getValue();await send('Emulation.setFocusEmulationEnabled',{enabled:false});contents.debugger.detach();return JSON.stringify({active,marked,shown,eyes,overOpen,intoWord,overClose,backOverClose,copied,unmarked});`) as { marked: string; shown: string[]; eyes: number; overOpen: number; intoWord: number; overClose: number; backOverClose: number; copied: string; unmarked: string };
+  console.log('[share-from-obsidian] editing', JSON.stringify({ ...editing, marked: editing.marked.replace(/[⁡-⁣]/g, '~') }));
+  assert.equal(editing.marked, `before ${secret('word')} after\n`, 'the command wraps the selection');
+  assert.deepEqual([editing.shown, editing.eyes], [['word'], 1], 'the marked text shows, with an eye');
+  assert.deepEqual([editing.overOpen, editing.intoWord, editing.overClose, editing.backOverClose], [10, 11, 17, 14], 'each mark is one cursor step');
+  assert.equal(editing.copied, 'before word after', 'copying leaves the marks behind');
+  assert.equal(editing.unmarked, 'before word after\n', 'the command takes the marks off again');
 
   step('editing the note in Obsidian updates the share');
   await run(session, "const f=app.vault.getAbstractFileByPath('Shared/Plan.md');await app.vault.modify(f,(await app.vault.read(f))+'\\nAdded in Obsidian.\\n');return JSON.stringify(true);");
