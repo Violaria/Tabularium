@@ -2,11 +2,11 @@
 
 [English](README.md) · [中文](README.zh-CN.md) · Lingua Latīna
 
-Tabularium est ministrator domi hospitatus qui tabularia commentariorum cryptographia ab extremo ad extremum synchronizat, una cum additamento Obsidian et consola interretiali quae ad eum conectunt. Commentarii in quoque instrumento cryptantur antequam mittuntur; ministrator eos in CouchDB servat nec legere potest. Inscriptio libera non est: rationes usorum ab administratore creantur.
+Tabularium est ministrator domi hospitatus qui armaria commentariorum cryptographia ab extremo ad extremum synchronizat, una cum additamento Obsidian et consola interretiali quae ad eum conectunt. Commentarii in quoque instrumento cryptantur antequam mittuntur; ministrator eos in CouchDB servat nec legere potest. Inscriptio libera non est: rationes usorum ab administratore creantur.
 
 Paginae interretiales etiam commentarios interretiales continent: commentarii in navigatro legi et emendari possunt, et pluribus modis in interrete publico communicari (ab omnibus aut sola tessera legendi, nexu ad tempus valido aut perpetuo); commentarios etiam ad Kindle tuum mittere potes. Communicatio commentariorum in interrete et missio ad Kindle etiam in additamento Obsidian praebentur.
 
-Praeter synchronizationem paginae interretiales ministratoris administrationem, exempla tutelaria statuta et administratorem artificialem cui nomen est Tabularius (scribam tabularii) praebent, quem dominus tabularii singulis tabulariis accendere potest. Pluribus API (OpenAI, Anthropic, Google Gemini, DeepSeek) et machinis inferentiae exemplarium localiter institutorum (vLLM, Ollama, TensorRT-LLM) uti potest; rationes omnia mandata quae cuiusque praebitoris API accipit statuere possunt. Scribae etiam quaestionem RAG addere potes, si ministratorem RAGFlow instituisti.
+Praeter synchronizationem paginae interretiales ministratoris administrationem, exempla tutelaria statuta et administratorem artificialem cui nomen est Tabularius (scribam tabularii) praebent, quem dominus armarii singulis armariis accendere potest. Pluribus API (OpenAI, Anthropic, Google Gemini, DeepSeek) et machinis inferentiae exemplarium localiter institutorum (vLLM, Ollama, TensorRT-LLM) uti potest; rationes omnia mandata quae cuiusque praebitoris API accipit statuere possunt. Scribae etiam quaestionem RAG addere potes, si ministratorem RAGFlow instituisti.
 
 ## Facultates
 
@@ -14,25 +14,25 @@ Praeter synchronizationem paginae interretiales ministratoris administrationem, 
 
 Synchronizatio protocollo replicationis CouchDB utitur. Nucleus synchronizationis clientis est `@tabularium/sync-core` in repositorio additamenti, quo additamentum Obsidian, commentarii interretiales et cliens lineae mandatorum communiter utuntur.
 
-- **Forma datorum**: quodque tabularium in ministratore repositorium CouchDB proprium est, et quodque instrumentum repositorium locale suum habet. Mutationes plicarum primum in repositorium locale scribuntur, deinde cum ministratore utroque versu replicantur. Commentarius ut unum documentum metadatorum servatur (praefixo `f:`, quod frusta eius enumerat) et frusta contenti (praefixo `h:`, ex contento nominata, ita ut frusta paria semel serventur); mutato uno loco, sola frusta mutata mittuntur.
+- **Forma datorum**: quodque armarium in ministratore repositorium CouchDB proprium est, et quodque instrumentum repositorium locale suum habet. Mutationes plicarum primum in repositorium locale scribuntur, deinde cum ministratore utroque versu replicantur. Commentarius ut unum documentum metadatorum servatur (praefixo `f:`, quod frusta eius enumerat) et frusta contenti (praefixo `h:`, ex contento nominata, ita ut frusta paria semel serventur); mutato uno loco, sola frusta mutata mittuntur.
 - **Synchronizatio viva**: clientes fluxum mutationum ministratoris sequuntur (`_changes` ut fluxum continuum aut interrogationem longam), ita ut mutationes aliorum instrumentorum intra paucas secundas adveniant. Additamentum vivo modo, ad tempus statutum aut per eventus (initium, servationem, mutationem plicae) synchronizare potest. Synchronizatio viva in singulis instrumentis suspendi potest: mutationes in instrumento manent et mittuntur cum resumitur aut «Synchroniza nunc» premitur.
 - **Discrepantiae**: si duo instrumenta eundem commentarium diversis lineis mutant, mutationes sponte miscentur; si eundem locum, omnes versiones servantur. Additamentum versionem recentiorem servare potest; commentarii interretiales versiones iuxta ostendunt, ut unam servare aut textum mixtum emendare possis. Menu contextus additamenti «Historia versionum» versiones commentarii in instrumento enumerat, ut comparentur, exscribantur aut restituantur.
-- **Porta**: clientes ad `/sync/<ID tabularii>/` conectunt, quod porta ad nomen repositorii physici a ministratore generatum refert. Sola puncta quibus replicatio eget admittit (fluxum mutationum, `_revs_diff`, `_bulk_get`, `_bulk_docs`, `_local` et cetera), corpus cuiusque scriptionis legit, sola documenta forma cryptata et viis obscuratis accipit, cetera singillatim reicit. Petitiones in singulis instrumentis limitantur; conexiones longae post quinque minuta finiuntur et cliens denuo conectit.
-- **Rationes et instrumenta**: rationes usorum ab administratore in pagina creantur; tessera prima in primo ingressu mutatur. Quisque cliens (tabularium Obsidian aut profilum navigatri) ingrediens testimonium instrumenti proprium accipit, triginta dies validum, quod sponte renovatur cum minus quam quindecim dies supersunt; instrumentum triginta dies non adhibitum exspirat. «Ratio → Instrumenta» instrumenta per clientes cum tempore ultimae synchronizationis enumerat, ubi nominari aut revocari possunt; revocato instrumento, conexiones eius statim clauduntur.
-- **Tabularium reaedificare**: ut ministrator commentariis unius instrumenti superscribatur, dominus tabularii primum illi instrumento fenestram quindecim minutorum concedit. Porta reaedificationem in novum repositorium physicum vertit et ad id transit, vetere servato ut redire possis; cetera instrumenta deinde «Tabularium clausum» nuntiant, a ministratore denuo accipiunt, et dominus tabularium reserat.
-- **Cliens lineae mandatorum**: idem nucleus etiam ut cliens lineae mandatorum praebetur, qui tabularium in ministratore ut plicarum apertarum collectionem imitari potest, ad recensionem git aut scripta.
+- **Porta**: clientes ad `/sync/<ID armarii>/` conectunt, quod porta ad nomen repositorii physici a ministratore generatum refert. Sola puncta quibus replicatio eget admittit (fluxum mutationum, `_revs_diff`, `_bulk_get`, `_bulk_docs`, `_local` et cetera), corpus cuiusque scriptionis legit, sola documenta forma cryptata et viis obscuratis accipit, cetera singillatim reicit. Petitiones in singulis instrumentis limitantur; conexiones longae post quinque minuta finiuntur et cliens denuo conectit.
+- **Rationes et instrumenta**: rationes usorum ab administratore in pagina creantur; tessera prima in primo ingressu mutatur. Quisque cliens (armarium Obsidian aut profilum navigatri) ingrediens testimonium instrumenti proprium accipit, triginta dies validum, quod sponte renovatur cum minus quam quindecim dies supersunt; instrumentum triginta dies non adhibitum exspirat. «Ratio → Instrumenta» instrumenta per clientes cum tempore ultimae synchronizationis enumerat, ubi nominari aut revocari possunt; revocato instrumento, conexiones eius statim clauduntur.
+- **Armarium reaedificare**: ut ministrator commentariis unius instrumenti superscribatur, dominus armarii primum illi instrumento fenestram quindecim minutorum concedit. Porta reaedificationem in novum repositorium physicum vertit et ad id transit, vetere servato ut redire possis; cetera instrumenta deinde «Armarium clausum» nuntiant, a ministratore denuo accipiunt, et dominus armarium reserat.
+- **Cliens lineae mandatorum**: idem nucleus etiam ut cliens lineae mandatorum praebetur, qui armarium in ministratore ut plicarum apertarum collectionem imitari potest, ad recensionem git aut scripta.
 
 ### Cryptographia
 
-- Commentarii in instrumento cryptantur antequam in repositorium synchronizationis intrant. Tessera E2EE per PBKDF2-SHA256 (310 000 iterationes) in clavem principalem extenditur, ex qua HKDF clavem cuique frusto derivat, et frusta AES-256-GCM cryptantur. Sal PBKDF2 cum tabulario in ministratore servatur; tessera in quoque instrumento manet.
+- Commentarii in instrumento cryptantur antequam in repositorium synchronizationis intrant. Tessera E2EE per PBKDF2-SHA256 (310 000 iterationes) in clavem principalem extenditur, ex qua HKDF clavem cuique frusto derivat, et frusta AES-256-GCM cryptantur. Sal PBKDF2 cum armario in ministratore servatur; tessera in quoque instrumento manet.
 - Obscuratio viarum etiam vias plicarum cryptat, ita ut ID documentorum et metadata in ministratore nec nomina plicarum nec structuram tabularum ferant.
 - Dum ad Tabularium conectit, additamentum cryptographiam (E2EE V2) et obscurationem viarum imponit, et ministrator sola documenta hac forma accipit; ita ministrator semper textum cryptatum tenet. Ministrator rationes, instrumenta, tempora petitionum et commeatum videt.
-- Testimonium synchronizationis et tessera in `data.json` additamenti clave in solo instrumento servata cryptantur. Conexio tabulario Obsidian unde ingressus est alligatur; si plica additamenti in aliud tabularium exscribitur, conexio in initio deletur.
-- Tabularius uni tabulario accensus ministratori tesseram eius (clave ministratoris cryptatam) et exemplum apertum dat; pagina hoc ante accensionem explicat, et exstinctio ea delet.
+- Testimonium synchronizationis et tessera in `data.json` additamenti clave in solo instrumento servata cryptantur. Conexio armario Obsidian unde ingressus est alligatur; si plica additamenti in aliud armarium exscribitur, conexio in initio deletur.
+- Tabularius uni armario accensus ministratori tesseram eius (clave ministratoris cryptatam) et exemplum apertum dat; pagina hoc ante accensionem explicat, et exstinctio ea delet.
 
 ### Ordo plicarum
 
-Scribe `Collation.md` in radice tabularii; index indentatus in corpore eius ordo indicis plicarum est:
+Scribe `Collation.md` in radice armarii; index indentatus in corpore eius ordo indicis plicarum est:
 
 ```markdown
 - Consilium operis —— primum consilium lege
@@ -53,11 +53,11 @@ Scribe `Collation.md` in radice tabularii; index indentatus in corpore eius ordo
 
 Cliens commentariorum in navigatro, ad commentarios legendos et emendandos in computatro sine Obsidian.
 
-- Synchronizatio et decryptio in navigatro fiunt, et quisque navigatrum instrumentum habetur. Commentarii in systemate plicarum privato navigatri (OPFS) et IndexedDB servantur, et tessera in sola memoria paginae vivit. Primus aditus totum tabularium accipit; postea solae mutationes synchronizantur.
+- Synchronizatio et decryptio in navigatro fiunt, et quisque navigatrum instrumentum habetur. Commentarii in systemate plicarum privato navigatri (OPFS) et IndexedDB servantur, et tessera in sola memoria paginae vivit. Primus aditus totum armarium accipit; postea solae mutationes synchronizantur.
 - Lectio Obsidian similis est: callouts, indices officiorum, tabulae, formulae KaTeX, `==illuminationes==`, figurae Mermaid, et codicis frusta per linguam colorata (plus sexaginta linguae).
 - Editor tres modos habet: redditionem vivam (ut Live Preview Obsidian), fontem et praevisionem divisam. Textu selecto, instrumentarium formae apparet, et menu «+» tabulas, codicis frusta, figuras Mermaid, formulas, callouts et adiuncta inserit. Commentarii duabus secundis post finem scribendi servantur, et titulus «Localiter servatum», «Sursum mittendum», «Synchronizatum» aut «Discrepantia» ostendit.
 - Commentarios et tabulas crea, renomina, move, dele; renominatio aut motio nexus wiki et Markdown in aliis commentariis renovat. Adiuncta in editorem trahi possunt.
-- Navigatrum paginas servat, ita ut tabularium plene acceptum sine rete reserari, legi et emendari possit; mutationes interea factae mittuntur cum rete redit.
+- Navigatrum paginas servat, ita ut armarium plene acceptum sine rete reserari, legi et emendari possit; mutationes interea factae mittuntur cum rete redit.
 - «Dele data localia» exemplum in hoc navigatro delet et instrumentum eius revocat; exitus idem offert.
 
 ### Communicatio
@@ -93,7 +93,7 @@ Additamentum et commentarii interretiales ex commentariis in instrumento librum 
 
 ID additamenti est `tabularium`; Obsidian 1.13 vel recentius requirit et in computatris et telephonis operatur.
 
-- **Ingressus**: inscriptionem ministratoris, nomen usoris et tesseram insere, tabularium elige aut crea, tesseram E2EE scribe; additamentum instrumentum emittit et conexionem implet. Instrumentum quod iam commentarios habet ministratorem sequi aut tempora mutationis comparare potest.
+- **Ingressus**: inscriptionem ministratoris, nomen usoris et tesseram insere, armarium elige aut crea, tesseram E2EE scribe; additamentum instrumentum emittit et conexionem implet. Instrumentum quod iam commentarios habet ministratorem sequi aut tempora mutationis comparare potest.
 - **Optiones**: Conexio, Synchronizatio, Ordo plicarum, Ad Kindle mittere, Scriptor, Species, Cura, Auxilium; quaeque res quaestione optionum Obsidian inveniri potest. Paginae auxilii et historia versionum cum additamento veniunt.
 - **Cura**: a ministratore denuo accipere, ministratori hoc instrumento superscribere, reserare, relatio diagnostica, plicas imperfectas invenire, in omnibus discrepantiis recentiorem servare. Actiones periculosae unum dialogum confirmationis communem habent, qui effectum in cetera instrumenta dicit.
 - **Emendatio**: idem instrumentarium formae ac commentarii interretiales («Secretum» incluso) et menu contextus «Insere»; quaeque res iussum est cui compendium claviaturae assignari potest.
@@ -102,10 +102,10 @@ ID additamenti est `tabularium`; Obsidian 1.13 vel recentius requirit et in comp
 
 ### Tabularius (scriba)
 
-Administrator commentariorum artificialis singulis tabulariis accensus, sub «Tabularius» in applicatione interretiali.
+Administrator commentariorum artificialis singulis armariis accensus, sub «Tabularius» in applicatione interretiali.
 
-- **Quaestiones et inquisitio**: ministrator clientem hospitatum pro tabulario agit, exemplum apertum synchronizat et indicat (inquisitio totius textus SQLite FTS5 cum inquisitione embedding optionali, duobus eventuum indicibus mixtis). Responsa paulatim apparent, et commentarii citati clicu in commentariis interretialibus aperiuntur.
-- **Ordinatio et propositiones**: ut commentarios ordinet, renominet, moveat aut deleat, propositionem cum diff cuiusque plicae submittit; tu eam recenses et totam adhibes aut abicis. Ante adhibitionem quaeque plica probatur num alibi mutata sit; motiones et renominationes nexus ad eas ducentes renovant; tempora mutationis sunt tempus adhibitionis. Regulae ordinandi in mandatis ministratoris et tabularii scribuntur et curam `Content.md` cuiusque tabulae et `Collation.md` radicis complecti possunt.
+- **Quaestiones et inquisitio**: ministrator clientem hospitatum pro armario agit, exemplum apertum synchronizat et indicat (inquisitio totius textus SQLite FTS5 cum inquisitione embedding optionali, duobus eventuum indicibus mixtis). Responsa paulatim apparent, et commentarii citati clicu in commentariis interretialibus aperiuntur.
+- **Ordinatio et propositiones**: ut commentarios ordinet, renominet, moveat aut deleat, propositionem cum diff cuiusque plicae submittit; tu eam recenses et totam adhibes aut abicis. Ante adhibitionem quaeque plica probatur num alibi mutata sit; motiones et renominationes nexus ad eas ducentes renovant; tempora mutationis sunt tempus adhibitionis. Regulae ordinandi in mandatis ministratoris et armarii scribuntur et curam `Content.md` cuiusque tabulae et `Collation.md` radicis complecti possunt.
 - **Praebitores et rationes**: Anthropic, OpenAI, Google Gemini, DeepSeek, et vLLM, Ollama, TensorRT-LLM localia. Indices exemplarium ex API praebitorum leguntur. Ratio exemplar, parametra et mandatum additum coniungit; forma eius omnia parametra quae cuiusque praebitoris API officialis accipit enumerat, et colloquium ea super rationem accommodare potest.
 - **Colloquia**: adiuncta imaginum, plicarum textus et PDF; incepta et archivum; memoria per colloquia (per rationem servata, in pagina curata); inquisitio colloquiorum priorum; colloquia longa modo cuiusque praebitoris contracta aut decurtata.
 - **Verificatio per rete**: versiones, iussa, parametra et nexus commentarii singillatim probat, quodque ut congruens, obsoletum, falsum aut non verificabile aestimat, et fontes enumerat. Claude, OpenAI et Gemini inquisitione propria utuntur; cetera exemplaria SearXNG ministratoris.
@@ -118,9 +118,9 @@ Administrator commentariorum artificialis singulis tabulariis accensus, sub «Ta
 
 Una pagina ingressus et una forma communis: Domus, Commentarii interretiales, Tabularius et Ratio, et administratoribus Administratio.
 
-- **Domus**: status tabulariorum, tempus ultimae synchronizationis cuiusque instrumenti, spatium occupatum, commentarii et colloquia recentia, summarium ministratoris.
-- **Ratio**: tabularia (concessio reaedificationis, reseratio), instrumenta, communicata, inscriptio Kindle, tessera, et facies (lingua et colores: Rosa, Silva, Lavandula, et quotlibet colores proprii).
-- **Administratio**: rationes usorum, tabularia, instrumenta, usus, status ministratoris et acta; «Optiones ministri» (epistulae et Kindle, communicatio, vita sessionum et instrumentorum, limites petitionum, retentio actorum); «Optiones LLM» (praebitores, rationes, mandata, embedding, aditus ad rete, summus gradus permissionis, hospites SSH, harenarium); «Communicata»; «Exempla tutelaria». Omnes optiones currentes hic mutantur et statim valent.
+- **Domus**: status armariorum, tempus ultimae synchronizationis cuiusque instrumenti, spatium occupatum, commentarii et colloquia recentia, summarium ministratoris.
+- **Ratio**: armaria (concessio reaedificationis, reseratio), instrumenta, communicata, inscriptio Kindle, tessera, et facies (lingua et colores: Rosa, Silva, Lavandula, et quotlibet colores proprii).
+- **Administratio**: rationes usorum, armaria, instrumenta, usus, status ministratoris et acta; «Optiones ministri» (epistulae et Kindle, communicatio, vita sessionum et instrumentorum, limites petitionum, retentio actorum); «Optiones LLM» (praebitores, rationes, mandata, embedding, aditus ad rete, summus gradus permissionis, hospites SSH, harenarium); «Communicata»; «Exempla tutelaria». Omnes optiones currentes hic mutantur et statim valent.
 - **Exempla tutelaria statuta**: ministrator exempla incrementalia sine intermissione cotidie, hebdomadatim aut menstrue facit, cum tempore, zona temporis, numero servandorum et intervallo exemplorum plenorum; quodque punctum post magnitudinem et SHA-256 probata publicatur, et defectus in pagina «Conspectus» notatur.
 - Additamentum et omnes paginae interretiales Anglice, Sinice et Latine praebentur.
 
@@ -183,7 +183,7 @@ docker load -i tabularium-server-<versio>.tar
 docker tag tabularium-server:<versio> tabularium-server
 cd deploy
 cp .env.example .env    # tesseras et TABULARIUM_PUBLIC_URL imple
-docker compose -p tabularium --env-file .env up -d --wait
+docker compose -p armarium --env-file .env up -d --wait
 ```
 
 Porta tantum in `127.0.0.1` auscultat. Ante eam pone procuratorem inversum HTTPS qui responsa non retinet (fluxus mutationum synchronizationis conexio diuturna est), cuius tempus legendi quinque minuta portae excedit, et qui corpora petitionum 64 MiB accipit. Pro nginx: `proxy_buffering off`, `proxy_request_buffering off`, `proxy_read_timeout 600s`, `client_max_body_size 64m`.
